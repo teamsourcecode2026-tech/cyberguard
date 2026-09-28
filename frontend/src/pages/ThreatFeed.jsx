@@ -1,5 +1,3 @@
-import mockData from "../mockData";
-
 const riskColors = {
   Safe: "bg-green-500",
   Low: "bg-blue-500",
@@ -8,8 +6,8 @@ const riskColors = {
   Critical: "bg-red-600",
 };
 
-function ThreatFeed() {
-  const sorted = [...mockData].sort(
+function ThreatFeed({ alerts, onSelect }) {
+  const sorted = [...alerts].sort(
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
   );
 
@@ -21,11 +19,12 @@ function ThreatFeed() {
         {sorted.map((alert) => (
           <div
             key={alert.event_id}
-            className="bg-gray-800 rounded-xl p-5 shadow-lg flex items-center justify-between"
+            onClick={() => onSelect(alert)}
+            className="bg-gray-800 hover:bg-gray-700 cursor-pointer rounded-xl p-5 shadow-lg flex items-center justify-between"
           >
             <div>
-              <p className="text-white font-semibold">
-                {alert.event_id} — {alert.category}
+              <p className="text-white font-semibold capitalize">
+                {alert.category} alert
               </p>
               <p className="text-gray-400 text-sm mt-1">{alert.explanation}</p>
               <p className="text-gray-500 text-xs mt-1">

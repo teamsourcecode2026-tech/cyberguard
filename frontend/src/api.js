@@ -1,9 +1,14 @@
-// This file will hold real backend calls once Manish's API is ready.
-// Example (to be used later):
-//
-// export async function getAlerts() {
-//   const res = await fetch("http://localhost:8000/api/alerts");
-//   return res.json();
-// }
+import mockData from "./mockData";
 
-export {};
+const BASE_URL = "http://172.27.0.97:8000";
+
+export async function getAlerts() {
+  try {
+    const res = await fetch(`${BASE_URL}/api/alerts`);
+    if (!res.ok) throw new Error("Backend error");
+    return await res.json();
+  } catch (err) {
+    console.warn("Backend not reachable, using mock data");
+    return mockData;
+  }
+}
