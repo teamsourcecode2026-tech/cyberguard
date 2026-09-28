@@ -1,0 +1,27 @@
+[
+  {
+    "id": "ph_001",
+    "text": "URGENT: Your bank account is blocked. Click here to verify: http://fake-bank.example",
+    "expected_label": "phishing"
+  },
+  {
+    "id": "ph_002",
+    "text": "Hi team, here are the notes from today's meeting.",
+    "expected_label": "legitimate"
+  },
+  {
+    "id": "ph_003",
+    "text": "Your OTP is 482913. Do not share it with anyone.",
+    "expected_label": "legitimate"
+  },
+  {
+    "id": "ph_004",
+    "text": "Congratulations! You have won a free iPhone. Claim now: http://prize-claim.example",
+    "expected_label": "phishing"
+  },
+  {
+    "id": "ph_005",
+    "text": "Reminder: your project submission is due tomorrow at 5 PM.",
+    "expected_label": "legitimate"
+  }
+]
