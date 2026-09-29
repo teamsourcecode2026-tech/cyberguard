@@ -14,8 +14,7 @@ def score_and_explain(module_output: dict, category: str) -> dict:
         risk_level = "Critical"
 
     if indicators:
-        explanation = f"{risk_level} Risk: This {category} message shows {', '.join(indicators)}."
+        explanation = f"{risk_level} Risk ({category}): {', '.join(indicators)}."
     else:
-        explanation = f"{risk_level} Risk: This {category} message shows no strong indicators, but the model still assigned this score."
-
+        explanation = f"{risk_level} Risk ({category}): no warning signs detected."
     return {"risk_level": risk_level, "explanation": explanation}
