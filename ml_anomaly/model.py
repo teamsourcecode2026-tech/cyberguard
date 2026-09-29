@@ -1,8 +1,10 @@
+import os
 import joblib
 import pandas as pd
 from datetime import datetime
 
-model = joblib.load("anomaly_model.pkl")
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "anomaly_model.pkl")
+model = joblib.load(MODEL_PATH)
 FEATURES = ["failed_attempts", "new_device", "unusual_time"]
 
 def analyze_anomaly(log: dict) -> dict:
