@@ -11,4 +11,5 @@ db = client["cyberguard"]  # this creates/uses a database named "cyberguard"
 events = db["events"]
 phishing_results = db["phishing_results"]
 anomaly_results = db["anomaly_results"]
+deepfake_results = db["deepfake_results"]
 alerts = db["alerts"]
