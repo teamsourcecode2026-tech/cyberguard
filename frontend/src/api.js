@@ -1,6 +1,6 @@
 import mockData from "./mockData";
 
-const BASE_URL = "http://172.27.0.97:8000";
+const BASE_URL = "http://10.138.39.97:8000";
 
 export async function getAlerts() {
   try {
