@@ -1,10 +1,8 @@
-import mockData from "../mockData";
-
-function Overview() {
-  const total = mockData.length;
-  const phishing = mockData.filter((a) => a.category === "phishing").length;
-  const deepfake = mockData.filter((a) => a.category === "deepfake").length;
-  const anomaly = mockData.filter((a) => a.category === "anomaly").length;
+function Overview({ alerts }) {
+  const total = alerts.length;
+  const phishing = alerts.filter((a) => a.category === "phishing").length;
+  const deepfake = alerts.filter((a) => a.category === "deepfake").length;
+  const anomaly = alerts.filter((a) => a.category === "anomaly").length;
 
   return (
     <div className="min-h-screen bg-gray-900 p-8">
