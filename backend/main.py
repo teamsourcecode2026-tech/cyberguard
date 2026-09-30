@@ -47,6 +47,9 @@ def ingest_phishing(text: str):
     alerts.insert_one({
         "event_id": event_id,
         "category": "phishing",
+         "score": result["score"],
+        "verdict": result["verdict"],
+        "indicators": result["indicators"],
         "overall_risk_level": final["risk_level"],
         "explanation": final["explanation"],
         "recommended_action": "Quarantine email" if final["risk_level"] in ["High", "Critical"] else "Monitor",
@@ -81,6 +84,9 @@ def ingest_deepfake(file: UploadFile = File(...)):
     alerts.insert_one({
         "event_id": event_id,
         "category": "deepfake",
+        "score": result["score"],
+        "verdict": result["verdict"],
+        "indicators": result["indicators"],
         "overall_risk_level": final["risk_level"],
         "explanation": final["explanation"],
         "recommended_action": "Flag for manual verification" if final["risk_level"] in ["High", "Critical"] else "Monitor",
@@ -110,6 +116,9 @@ def ingest_log(log: LogEntry):
     alerts.insert_one({
         "event_id": event_id,
         "category": "anomaly",
+         "score": result["score"],
+        "verdict": result["verdict"],
+        "indicators": result["indicators"],
         "overall_risk_level": final["risk_level"],
         "explanation": final["explanation"],
         "recommended_action": "Revoke session and require re-authentication" if final["risk_level"] in ["High", "Critical"] else "Monitor",
