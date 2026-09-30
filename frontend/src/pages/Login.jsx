@@ -5,15 +5,38 @@ function Login({ onLogin }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  function handleSubmit(e) {
-    e.preventDefault();
-    if (username.trim() === "" || password.trim() === "") {
-      setError("Please enter both username and password.");
-      return;
-    }
-    // Demo login: accepts any non-empty username/password
-    onLogin(username);
+  async function handleSubmit(e) {
+  e.preventDefault();
+
+  if (username.trim() === "" || password.trim() === "") {
+    setError("Please enter both username and password.");
+    return;
   }
+
+  try {
+    const response = await fetch("http://127.0.0.1:8000/api/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        username: username,
+        password: password,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      onLogin(data.username);
+    } else {
+      setError("Login failed.");
+    }
+  } catch (error) {
+    console.error(error);
+    setError("Cannot connect to the backend.");
+  }
+}
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center">
