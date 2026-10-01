@@ -28,3 +28,17 @@ def get_audio_pipeline():
             device=_DEVICE,
         )
     return _audio_pipe
+
+_ai_art_pipe = None
+
+def get_ai_art_pipeline():
+    """Lazily load and cache a general AI-vs-real image classifier
+    (catches fully AI-generated images, not just face-swap deepfakes)."""
+    global _ai_art_pipe
+    if _ai_art_pipe is None:
+        _ai_art_pipe = pipeline(
+            task="image-classification",
+            model="umm-maybe/AI-image-detector",
+            device=_DEVICE,
+        )
+    return _ai_art_pipe
