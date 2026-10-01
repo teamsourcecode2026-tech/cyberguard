@@ -17,6 +17,7 @@ class CyberGuardAnomalyDetector:
         self.features = None
         self.mean = None
         self.std = None
+        self.max_score = None
 
     def train(self, data):
 
@@ -48,6 +49,10 @@ class CyberGuardAnomalyDetector:
 
         self.mean = features.mean()
         self.std = features.std().replace(0, 1)
+        
+        # Fixed reference for scaling risk scores
+        z = (features - self.mean) / self.std
+        self.max_score = np.sqrt((z ** 2).sum(axis=1)).max()
 
         return self
 
@@ -67,7 +72,7 @@ class CyberGuardAnomalyDetector:
         )
 
         # Convert anomaly score to 0-100 risk score
-        max_score = anomaly_score.max()
+        max_score = self.max_score
 
         if max_score == 0:
             risk_scores = np.zeros(len(anomaly_score))
@@ -137,7 +142,8 @@ class CyberGuardAnomalyDetector:
             {
                 "features": self.features,
                 "mean": self.mean,
-                "std": self.std
+                "std": self.std,
+                "max_score": self.max_score
             },
             MODEL_PATH
         )
@@ -145,6 +151,19 @@ class CyberGuardAnomalyDetector:
         print(
             f"Model saved to: {MODEL_PATH}"
         )
+
+    @classmethod
+    def load_model(cls):
+
+        saved = joblib.load(MODEL_PATH)
+
+        detector = cls()
+        detector.features = saved["features"]
+        detector.mean = saved["mean"]
+        detector.std = saved["std"]
+        detector.max_score = saved["max_score"]
+
+        return detector
 
 
 def main():

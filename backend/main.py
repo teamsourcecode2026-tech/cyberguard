@@ -1,12 +1,22 @@
-from database import events, phishing_results, alerts
+import os
+import tempfile
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from datetime import datetime
+
+from database import events, phishing_results, anomaly_results, deepfake_results, alerts
 from risk_scoring import score_and_explain
-from datetime import datetime
 from phishing_model import analyze_phishing
-from fastapi import FastAPI
-from datetime import datetime
-
+from anomaly_model import analyze_anomaly
+from deepfake_model import analyze_deepfake
 app = FastAPI()
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # ---- Mock data (fake, hardcoded for now) ----
 
 fake_alerts = [
@@ -37,6 +47,9 @@ def ingest_phishing(text: str):
     alerts.insert_one({
         "event_id": event_id,
         "category": "phishing",
+         "score": result["score"],
+        "verdict": result["verdict"],
+        "indicators": result["indicators"],
         "overall_risk_level": final["risk_level"],
         "explanation": final["explanation"],
         "recommended_action": "Quarantine email" if final["risk_level"] in ["High", "Critical"] else "Monitor",
@@ -47,13 +60,74 @@ def ingest_phishing(text: str):
     return {"event_id": event_id, **result, **final}
 
 @app.post("/api/ingest/deepfake")
-def ingest_deepfake():
-    return {"event_id": "evt_002"}  # fake response for now
+def ingest_deepfake(file: UploadFile = File(...)):
+    suffix = os.path.splitext(file.filename)[1] or ".jpg"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(file.file.read())
+        tmp_path = tmp.name
 
+    try:
+        result = analyze_deepfake(tmp_path)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+    event = events.insert_one({"type": "deepfake", "raw_payload": file.filename, "timestamp": str(datetime.now())})
+    event_id = str(event.inserted_id)
+
+    deepfake_results.insert_one({"event_id": event_id, **result})
+
+    final = score_and_explain(result, "deepfake")
+
+    alerts.insert_one({
+        "event_id": event_id,
+        "category": "deepfake",
+        "score": result["score"],
+        "verdict": result["verdict"],
+        "indicators": result["indicators"],
+        "overall_risk_level": final["risk_level"],
+        "explanation": final["explanation"],
+        "recommended_action": "Flag for manual verification" if final["risk_level"] in ["High", "Critical"] else "Monitor",
+        "status": "new",
+        "created_at": str(datetime.now())
+    })
+
+    return {"event_id": event_id, **result, **final}
+class LogEntry(BaseModel):
+    user_id: str
+    ip: str
+    device: str
+    timestamp: str
+    failed_attempts: int = 0
 @app.post("/api/ingest/log")
-def ingest_log():
-    return {"event_id": "evt_003"}  # fake response for now
 
+def ingest_log(log: LogEntry):
+    data = log.model_dump()
+    result = analyze_anomaly(data)
+
+    event = events.insert_one({"type": "anomaly", "raw_payload": data, "timestamp": str(datetime.now())})
+    event_id = str(event.inserted_id)
+
+    anomaly_results.insert_one({"event_id": event_id, **result})
+
+    final = score_and_explain(result, "anomaly")
+
+    alerts.insert_one({
+        "event_id": event_id,
+        "category": "anomaly",
+         "score": result["score"],
+        "verdict": result["verdict"],
+        "indicators": result["indicators"],
+        "overall_risk_level": final["risk_level"],
+        "explanation": final["explanation"],
+        "recommended_action": "Revoke session and require re-authentication" if final["risk_level"] in ["High", "Critical"] else "Monitor",
+        "status": "new",
+        "created_at": str(datetime.now())
+    })
+
+    return {"event_id": event_id, **result, **final}
 @app.get("/api/alerts")
 def get_alerts():
     results = list(alerts.find({}, {"_id": 0}))
@@ -65,11 +139,14 @@ def get_alert_detail(event_id: str):
     if alert:
         return alert
     return {"error": "not found"}
+
 @app.get("/api/stats")
 def get_stats():
+    categories = ["phishing", "deepfake", "anomaly"]
+    levels = ["Safe", "Low", "Medium", "High", "Critical"]
     return {
-        "total_events": 3,
-        "threats_detected": 1,
-        "by_category": {"phishing": 1, "deepfake": 0, "anomaly": 0},
-        "by_risk_level": {"Safe": 0, "Low": 0, "Medium": 0, "High": 1, "Critical": 0}
-    }
+        "total_events": events.count_documents({}),
+        "threats_detected": alerts.count_documents({"overall_risk_level": {"$in": ["Medium", "High", "Critical"]}}),
+        "by_category": {c: alerts.count_documents({"category": c}) for c in categories},
+        "by_risk_level": {l: alerts.count_documents({"overall_risk_level": l}) for l in levels}
+}
