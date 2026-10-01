@@ -3,9 +3,9 @@ from PIL import Image
 import cv2
 
 try:
-    from .models import get_image_pipeline, get_audio_pipeline  # when imported from repo root
+    from .models import get_image_pipeline, get_audio_pipeline, get_ai_art_pipeline
 except ImportError:
-    from models import get_image_pipeline, get_audio_pipeline   # when run inside ml_deepfake/
+    from models import get_image_pipeline, get_audio_pipeline, get_ai_art_pipeline
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
@@ -40,6 +40,14 @@ def _fake_prob_from_result(result, fake_label_keywords=("fake", "deepfake")):
     return 0.0
 
 
+def _ai_art_prob(result):
+    """umm-maybe's labels are typically 'artificial' and 'human'."""
+    for item in result:
+        if "artificial" in item["label"].lower() or "ai" in item["label"].lower():
+            return item["score"]
+    return 0.0
+
+
 def _verdict_from_score(score):
     if score >= 70:
         return "Likely Manipulated"
@@ -50,11 +58,21 @@ def _verdict_from_score(score):
 
 
 def _analyze_image(path):
-    pipe = get_image_pipeline()
     image = Image.open(path).convert("RGB")
-    fake_prob = _fake_prob_from_result(pipe(image))
+        deepfake_pipe = get_image_pipeline()
+    deepfake_fake_prob = _fake_prob_from_result(deepfake_pipe(image))
+
+    ai_art_pipe = get_ai_art_pipeline()
+    ai_art_fake_prob = _ai_art_prob(ai_art_pipe(image))
+
+    fake_prob = max(deepfake_fake_prob, ai_art_fake_prob)
     score = round(100 * fake_prob, 1)
-    return score, [f"Image classifier: {fake_prob*100:.1f}% likelihood of AI manipulation"]
+
+    indicators = [
+        f"Deepfake classifier: {deepfake_fake_prob*100:.1f}% likelihood of face manipulation",
+        f"AI-art classifier: {ai_art_fake_prob*100:.1f}% likelihood of full AI generation",
+    ]
+    return score, indicators
 
 
 def _analyze_video(path, num_frames=5):
