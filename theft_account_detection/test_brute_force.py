@@ -1,5 +1,5 @@
 import pandas as pd
-from brute_force_detector import detect_brute_force, make_logs
+from brute_force_detection import detect_brute_force, make_logs
 
 COLS = ["timestamp", "username", "ip", "success", "device", "country"]
 
