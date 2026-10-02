@@ -18,6 +18,8 @@ anomaly_results = db["anomaly_results"]
 
 deepfake_results = db["deepfake_results"]
 
+impersonation_results = db["impersonation_results"]
+
 alerts = db["alerts"]
 
 users = db["users"]

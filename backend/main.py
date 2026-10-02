@@ -4,8 +4,9 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
+from impersonation_detector import analyze_impersonation
 
-from database import events, phishing_results, anomaly_results, deepfake_results, alerts
+from database import events, phishing_results, anomaly_results, deepfake_results, impersonation_results, alerts
 from risk_scoring import score_and_explain
 from phishing_model import analyze_phishing
 from anomaly_model import analyze_anomaly
@@ -53,6 +54,32 @@ def ingest_phishing(text: str):
         "overall_risk_level": final["risk_level"],
         "explanation": final["explanation"],
         "recommended_action": "Quarantine email" if final["risk_level"] in ["High", "Critical"] else "Monitor",
+        "status": "new",
+        "created_at": str(datetime.now())
+    })
+
+    return {"event_id": event_id, **result, **final}
+
+@app.post("/api/ingest/impersonation")
+def ingest_impersonation(text: str):
+    result = analyze_impersonation(text)
+
+    event = events.insert_one({"type": "impersonation", "raw_payload": text, "timestamp": str(datetime.now())})
+    event_id = str(event.inserted_id)
+
+    impersonation_results.insert_one({"event_id": event_id, **result})
+
+    final = score_and_explain(result, "impersonation")
+
+    alerts.insert_one({
+        "event_id": event_id,
+        "category": "impersonation",
+        "score": result["score"],
+        "verdict": result["verdict"],
+        "indicators": result["indicators"],
+        "overall_risk_level": final["risk_level"],
+        "explanation": final["explanation"],
+        "recommended_action": "Block sender and warn user" if final["risk_level"] in ["High", "Critical"] else "Monitor",
         "status": "new",
         "created_at": str(datetime.now())
     })
