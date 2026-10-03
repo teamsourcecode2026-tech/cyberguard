@@ -4,9 +4,10 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
+import bcrypt
 from impersonation_detector import analyze_impersonation
 
-from database import events, phishing_results, anomaly_results, deepfake_results, impersonation_results, alerts
+from database import events, phishing_results, anomaly_results, deepfake_results, impersonation_results, alerts, users
 from risk_scoring import score_and_explain
 from phishing_model import analyze_phishing
 from anomaly_model import analyze_anomaly
@@ -18,24 +19,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# ---- Mock data (fake, hardcoded for now) ----
-
-fake_alerts = [
-    {
-        "event_id": "evt_001",
-        "category": "phishing",
-        "overall_risk_level": "High",
-        "explanation": "High Risk: This phishing message shows urgent language, suspicious link.",
-        "recommended_action": "Quarantine email",
-        "status": "new",
-        "created_at": str(datetime.now())
-    }
-]
 
 # ---- Endpoints ----
 
+class TextInput(BaseModel):
+    text: str
+
 @app.post("/api/ingest/phishing")
-def ingest_phishing(text: str):
+def ingest_phishing(body: TextInput):
+    text = body.text
     result = analyze_phishing(text)
 
     event = events.insert_one({"type": "phishing", "raw_payload": text, "timestamp": str(datetime.now())})
@@ -61,7 +53,8 @@ def ingest_phishing(text: str):
     return {"event_id": event_id, **result, **final}
 
 @app.post("/api/ingest/impersonation")
-def ingest_impersonation(text: str):
+def ingest_impersonation(body: TextInput):
+    text = body.text
     result = analyze_impersonation(text)
 
     event = events.insert_one({"type": "impersonation", "raw_payload": text, "timestamp": str(datetime.now())})
@@ -169,7 +162,7 @@ def get_alert_detail(event_id: str):
 
 @app.get("/api/stats")
 def get_stats():
-    categories = ["phishing", "deepfake", "anomaly"]
+    categories = ["phishing", "deepfake", "anomaly", "impersonation"]
     levels = ["Safe", "Low", "Medium", "High", "Critical"]
     return {
         "total_events": events.count_documents({}),
@@ -177,3 +170,45 @@ def get_stats():
         "by_category": {c: alerts.count_documents({"category": c}) for c in categories},
         "by_risk_level": {l: alerts.count_documents({"overall_risk_level": l}) for l in levels}
 }
+
+# ---- Auth Endpoints (merged from auth_server.py) ----
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+@app.post("/api/register")
+def register(data: RegisterRequest):
+    existing = users.find_one({"username": data.username})
+    if existing:
+        return {"success": False, "message": "Username already exists"}
+
+    hashed = bcrypt.hashpw(data.password.encode("utf-8"), bcrypt.gensalt())
+
+    users.insert_one({
+        "username": data.username,
+        "password": hashed.decode("utf-8"),
+        "created_at": str(datetime.now())
+    })
+
+    return {"success": True, "message": "Registered successfully"}
+
+@app.post("/api/login")
+def login(data: LoginRequest):
+    user = users.find_one({"username": data.username})
+
+    if not user:
+        return {"success": False, "message": "User not found"}
+
+    stored_hash = user["password"].encode("utf-8")
+    entered_password = data.password.encode("utf-8")
+
+    if not bcrypt.checkpw(entered_password, stored_hash):
+        return {"success": False, "message": "Incorrect password"}
+
+    return {"success": True, "message": "Login successful", "username": data.username}
+

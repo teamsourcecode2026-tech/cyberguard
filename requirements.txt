@@ -1,0 +1,34 @@
+# ---- Core Backend ----
+fastapi
+uvicorn[standard]
+pymongo
+python-dotenv
+pydantic
+python-multipart
+bcrypt
+
+# ---- ML: Phishing Detection ----
+scikit-learn
+joblib
+pandas
+numpy
+
+# ---- ML: Deepfake Detection ----
+torch
+torchvision
+torchaudio
+transformers
+pillow
+opencv-python
+soundfile
+
+# ---- ML: Anomaly Detection ----
+scipy
+
+# ---- Phishing Sub-Detectors (QR, URL, Website) ----
+qrcode
+beautifulsoup4
+requests
+
+# ---- Malicious URL/Domain Detection ----
+python-whois
