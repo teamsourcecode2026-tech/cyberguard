@@ -59,9 +59,8 @@ def _verdict_from_score(score):
 
 def _analyze_image(path):
     image = Image.open(path).convert("RGB")
-        deepfake_pipe = get_image_pipeline()
+    deepfake_pipe = get_image_pipeline()
     deepfake_fake_prob = _fake_prob_from_result(deepfake_pipe(image))
-
     ai_art_pipe = get_ai_art_pipeline()
     ai_art_fake_prob = _ai_art_prob(ai_art_pipe(image))
 
