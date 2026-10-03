@@ -2,20 +2,48 @@ function Overview({ alerts }) {
   const total = alerts.length;
 
   const phishing = alerts.filter(
-    (a) => a.category === "phishing"
-  ).length;
+  (a) =>
+    [
+      "phishing",
+      "url_phishing",
+      "social_phishing",
+      "qr_phishing",
+      "website_phishing",
+      "lookalike_domain",
+      "ssl_domain",
+      "url_manipulation",
+      "malicious_redirect",
+      "fake_login",
+    ].includes(a.category)
+).length;
 
   const deepfake = alerts.filter(
-    (a) => a.category === "deepfake"
-  ).length;
+  (a) => a.category === "deepfake"
+).length;
 
-  const anomaly = alerts.filter(
-    (a) => a.category === "anomaly"
-  ).length;
+const anomaly = alerts.filter(
+  (a) => a.category === "anomaly"
+).length;
 
-  const impersonation = alerts.filter(
-    (a) => a.category === "impersonation"
-  ).length;
+const impersonation = alerts.filter(
+  (a) => a.category === "impersonation"
+).length;
+
+const phishingRelated = alerts.filter(
+  (a) =>
+    [
+      "phishing",
+      "url_phishing",
+      "social_phishing",
+      "qr_phishing",
+      "website_phishing",
+      "lookalike_domain",
+      "ssl_domain",
+      "url_manipulation",
+      "malicious_redirect",
+      "fake_login",
+    ].includes(a.category)
+).length;
 
   const threatsDetected = alerts.filter((a) =>
     ["Medium", "High", "Critical"].includes(
@@ -129,7 +157,7 @@ function Overview({ alerts }) {
           </p>
 
           <p className="text-yellow-400 text-3xl font-bold mt-2">
-            {phishing}
+            {phishingRelated}
           </p>
         </div>
 
@@ -425,21 +453,26 @@ function Overview({ alerts }) {
         <div className="bg-gray-800 rounded-2xl p-6 shadow-lg border border-gray-700">
 
           {/* Table Header */}
-          <div className="grid grid-cols-4 gap-4 text-gray-400 text-sm font-semibold border-b border-gray-700 pb-3">
-
+          <div className="grid grid-cols-6 gap-4 text-gray-400 text-sm font-semibold border-b border-gray-700 pb-3">
             <span>Event ID</span>
             <span>Category</span>
             <span>Risk</span>
-            <span>Recommended Action</span>
-
-          </div>
-
+            <span>Verdict</span>
+            <span>Score</span>
+            <span>Action</span>
+           </div>
 
           {/* Real Alerts */}
-          {alerts.slice(0, 5).map((alert, index) => (
+          {[...alerts]
+            .sort(
+             (a, b) =>
+               new Date(b.created_at) - new Date(a.created_at)
+           )
+           .slice(0, 5)
+           .map((alert, index) => (
             <div
               key={alert.event_id || index}
-              className="grid grid-cols-4 gap-4 text-gray-300 text-sm py-4 border-b border-gray-700 last:border-b-0"
+              className="grid grid-cols-6 gap-4 text-gray-300 text-sm py-4 border-b border-gray-700 last:border-b-0"
             >
 
               {/* Event ID */}
@@ -471,6 +504,16 @@ function Overview({ alerts }) {
                 {alert.overall_risk_level}
               </span>
 
+
+              {/* Verdict */}
+              <span className="text-cyan-400 font-medium">
+                {alert.verdict || "-"}
+              </span>
+
+              {/* Score */}
+              <span className="text-white font-semibold">
+                {alert.score ?? "-"}
+              </span>
 
               {/* Recommended Action */}
               <span className="text-gray-300">
