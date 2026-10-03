@@ -13,15 +13,18 @@ function App() {
   const [alerts, setAlerts] = useState([]);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [usingMockData, setUsingMockData] = useState(false);
 
   useEffect(() => {
     if (loggedIn) {
       setLoading(true);
-      getAlerts().then((data) => {
-        setAlerts(data);
-        setSelectedAlert(data[0] || null);
-        setLoading(false);
-      });
+     getAlerts().then(({ data, isMock }) => {
+     const sorted = [...data].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+     setAlerts(sorted);
+     setSelectedAlert(sorted[0] || null);
+     setUsingMockData(isMock);
+     setLoading(false);
+     });
     }
   }, [loggedIn]);
 
