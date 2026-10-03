@@ -1,7 +1,9 @@
+import os
 import joblib
 
-model = joblib.load("phishing_model.pkl")
-vectorizer = joblib.load("vectorizer.pkl")
+_dir = os.path.dirname(__file__)
+model = joblib.load(os.path.join(_dir, "phishing_model.pkl"))
+vectorizer = joblib.load(os.path.join(_dir, "vectorizer.pkl"))
 
 URGENT_WORDS = ["urgent", "verify", "suspended", "click here", "immediately", "account will be"]
 SUSPICIOUS_LINK_HINTS = ["bit.ly", "tinyurl", "http://", "-secure", "login"]

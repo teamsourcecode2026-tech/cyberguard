@@ -1,10 +1,13 @@
 import os
+import sys
 import tempfile
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import List, Optional
 from datetime import datetime
 import bcrypt
+import pandas as pd
 from impersonation_detector import analyze_impersonation
 
 from database import events, phishing_results, anomaly_results, deepfake_results, impersonation_results, alerts, users
@@ -12,6 +15,31 @@ from risk_scoring import score_and_explain
 from phishing_model import analyze_phishing
 from anomaly_model import analyze_anomaly
 from deepfake_model import analyze_deepfake
+
+# Import all orphaned detectors
+from detectors import (
+    # ml_phishing sub-detectors
+    analyze_sms_phishing,
+    analyze_url_phishing,
+    analyze_qr_phishing,
+    analyze_social_media_phishing,
+    analyze_website_phishing,
+    # malicious_url_website detectors
+    analyze_domain_spoofing,
+    analyze_lookalike_domain,
+    analyze_ssl_domain,
+    analyze_url_manipulation,
+    analyze_malicious_redirect,
+    analyze_fake_login,
+    # theft_account_detection detectors
+    detect_brute_force,
+    detect_impossible_travel,
+    detect_new_device_or_ip,
+    detect_password_spraying,
+    detect_unusual_login_time,
+    detect_session_anomalies,
+    detect_behaviour_change,
+)
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -148,6 +176,167 @@ def ingest_log(log: LogEntry):
     })
 
     return {"event_id": event_id, **result, **final}
+
+# ---- Helper to save result + create alert ----
+
+def _save_and_alert(result: dict, category: str, raw_payload, recommended_action_high: str):
+    """Shared logic: save event, save result, create alert, return response."""
+    event = events.insert_one({"type": category, "raw_payload": raw_payload, "timestamp": str(datetime.now())})
+    event_id = str(event.inserted_id)
+
+    final = score_and_explain(result, category)
+
+    action = recommended_action_high if final["risk_level"] in ["High", "Critical"] else "Monitor"
+    alerts.insert_one({
+        "event_id": event_id,
+        "category": category,
+        "score": result["score"],
+        "verdict": result["verdict"],
+        "indicators": result["indicators"],
+        "overall_risk_level": final["risk_level"],
+        "explanation": final["explanation"],
+        "recommended_action": action,
+        "status": "new",
+        "created_at": str(datetime.now())
+    })
+
+    return {"event_id": event_id, **result, **final}
+
+# ---- Phishing Sub-Detector Endpoints ----
+
+class UrlInput(BaseModel):
+    url: str
+
+@app.post("/api/ingest/sms")
+def ingest_sms(body: TextInput):
+    result = analyze_sms_phishing(body.text)
+    return _save_and_alert(result, "sms_phishing", body.text, "Block sender number")
+
+@app.post("/api/ingest/url")
+def ingest_url(body: UrlInput):
+    result = analyze_url_phishing(body.url)
+    return _save_and_alert(result, "url_phishing", body.url, "Block URL and warn user")
+
+@app.post("/api/ingest/social")
+def ingest_social(body: TextInput):
+    result = analyze_social_media_phishing(body.text)
+    return _save_and_alert(result, "social_phishing", body.text, "Report and block account")
+
+@app.post("/api/ingest/qr")
+def ingest_qr(file: UploadFile = File(...)):
+    suffix = os.path.splitext(file.filename)[1] or ".png"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(file.file.read())
+        tmp_path = tmp.name
+
+    try:
+        result = analyze_qr_phishing(tmp_path)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+    return _save_and_alert(result, "qr_phishing", file.filename, "Block decoded URL")
+
+# ---- Malicious URL / Website Endpoints ----
+
+@app.post("/api/ingest/website")
+def ingest_website(body: UrlInput):
+    result = analyze_website_phishing(body.url)
+    return _save_and_alert(result, "website_phishing", body.url, "Block website and warn user")
+
+@app.post("/api/ingest/domain-spoof")
+def ingest_domain_spoof(body: UrlInput):
+    result = analyze_domain_spoofing(body.url)
+    return _save_and_alert(result, "domain_spoofing", body.url, "Block domain")
+
+@app.post("/api/ingest/lookalike")
+def ingest_lookalike(body: UrlInput):
+    result = analyze_lookalike_domain(body.url)
+    return _save_and_alert(result, "lookalike_domain", body.url, "Block domain")
+
+@app.post("/api/ingest/ssl-check")
+def ingest_ssl_check(body: UrlInput):
+    result = analyze_ssl_domain(body.url)
+    return _save_and_alert(result, "ssl_domain", body.url, "Warn user about untrusted certificate")
+
+@app.post("/api/ingest/url-manipulation")
+def ingest_url_manipulation(body: UrlInput):
+    result = analyze_url_manipulation(body.url)
+    return _save_and_alert(result, "url_manipulation", body.url, "Block URL")
+
+@app.post("/api/ingest/redirect-check")
+def ingest_redirect_check(body: UrlInput):
+    result = analyze_malicious_redirect(body.url)
+    return _save_and_alert(result, "malicious_redirect", body.url, "Block redirect chain")
+
+@app.post("/api/ingest/fake-login")
+def ingest_fake_login(body: UrlInput):
+    result = analyze_fake_login(body.url)
+    return _save_and_alert(result, "fake_login", body.url, "Block website and warn user")
+
+# ---- Account Theft / Batch Log Analysis Endpoint ----
+
+class LoginLogEntry(BaseModel):
+    timestamp: str
+    username: str
+    ip: str
+    success: bool
+    device: str = "unknown"
+    country: str = "unknown"
+    city: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    session_id: Optional[str] = None
+    bytes_downloaded: Optional[float] = None
+    password_changed: Optional[bool] = None
+    recovery_email_changed: Optional[bool] = None
+
+class BatchLoginLogs(BaseModel):
+    logs: List[LoginLogEntry]
+
+@app.post("/api/ingest/account-theft")
+def ingest_account_theft(body: BatchLoginLogs):
+    """Run all 7 theft/account-takeover detectors on a batch of login logs."""
+    df = pd.DataFrame([log.model_dump() for log in body.logs])
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    all_alerts = []
+    detectors = [
+        ("brute_force", detect_brute_force),
+        ("impossible_travel", detect_impossible_travel),
+        ("new_device_ip", detect_new_device_or_ip),
+        ("password_spraying", detect_password_spraying),
+        ("unusual_login_time", detect_unusual_login_time),
+        ("session_anomaly", detect_session_anomalies),
+        ("behaviour_change", detect_behaviour_change),
+    ]
+
+    for name, detector_fn in detectors:
+        try:
+            results = detector_fn(df)
+            for r in results:
+                # Convert theft detector output → standard API contract
+                normalized = {
+                    "score": r.get("risk_score", 50),
+                    "verdict": r.get("risk_level", "Medium"),
+                    "indicators": [r.get("explanation", ""), r.get("mitre", "")],
+                }
+                saved = _save_and_alert(
+                    normalized,
+                    f"account_theft_{name}",
+                    {"user": r.get("user", "unknown"), "threat_type": r.get("threat_type", name)},
+                    r.get("response", "Investigate immediately")
+                )
+                all_alerts.append(saved)
+        except Exception as e:
+            all_alerts.append({"detector": name, "error": str(e)})
+
+    return {"total_alerts": len(all_alerts), "alerts": all_alerts}
+
+# ---- Query Endpoints ----
+
 @app.get("/api/alerts")
 def get_alerts():
     results = list(alerts.find({}, {"_id": 0}))
@@ -162,12 +351,21 @@ def get_alert_detail(event_id: str):
 
 @app.get("/api/stats")
 def get_stats():
-    categories = ["phishing", "deepfake", "anomaly", "impersonation"]
+    all_categories = [
+        "phishing", "deepfake", "anomaly", "impersonation",
+        "sms_phishing", "url_phishing", "social_phishing", "qr_phishing",
+        "website_phishing", "domain_spoofing", "lookalike_domain",
+        "ssl_domain", "url_manipulation", "malicious_redirect", "fake_login",
+        "account_theft_brute_force", "account_theft_impossible_travel",
+        "account_theft_new_device_ip", "account_theft_password_spraying",
+        "account_theft_unusual_login_time", "account_theft_session_anomaly",
+        "account_theft_behaviour_change",
+    ]
     levels = ["Safe", "Low", "Medium", "High", "Critical"]
     return {
         "total_events": events.count_documents({}),
         "threats_detected": alerts.count_documents({"overall_risk_level": {"$in": ["Medium", "High", "Critical"]}}),
-        "by_category": {c: alerts.count_documents({"category": c}) for c in categories},
+        "by_category": {c: alerts.count_documents({"category": c}) for c in all_categories},
         "by_risk_level": {l: alerts.count_documents({"overall_risk_level": l}) for l in levels}
 }
 
