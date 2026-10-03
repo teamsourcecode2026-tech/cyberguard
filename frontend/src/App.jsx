@@ -3,6 +3,7 @@ import Login from "./pages/Login";
 import Overview from "./pages/Overview";
 import ThreatFeed from "./pages/ThreatFeed";
 import AlertDetail from "./pages/AlertDetail";
+import ThreatIntelligence from "./pages/ThreatIntelligence";
 import { getAlerts } from "./api";
 
 function App() {
@@ -49,6 +50,12 @@ function App() {
             <button onClick={() => setPage("overview")} className="text-gray-300 hover:text-white font-medium">Overview</button>
             <button onClick={() => setPage("feed")} className="text-gray-300 hover:text-white font-medium">Threat Feed</button>
             <button onClick={() => setPage("detail")} className="text-gray-300 hover:text-white font-medium">Alert Detail</button>
+            <button
+              onClick={() => setPage("intelligence")}
+              className="text-gray-300 hover:text-white font-medium"
+            >
+              Threat Intelligence
+            </button>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -88,6 +95,7 @@ function App() {
             />
           )}
           {page === "detail" && selectedAlert && <AlertDetail alert={selectedAlert} />}
+          {page === "intelligence" && <ThreatIntelligence />}
         </>
       )}
     </div>

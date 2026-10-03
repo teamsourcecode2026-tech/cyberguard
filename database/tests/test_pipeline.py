@@ -24,7 +24,7 @@ def check(name, is_correct, detail=""):
 def test_server_is_up():
     print("\nChecking if server is running...")
     try:
-        response = requests.get(BASE_URL + "/health")
+        response = requests.get(BASE_URL + "/docs")
         check("Server responded", response.status_code == 200)
     except:
         print("Server is NOT running. Start it first, then try again.")
