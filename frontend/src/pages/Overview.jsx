@@ -1,4 +1,3 @@
-
 function Overview({ alerts }) {
   const total = alerts.length;
 
@@ -12,6 +11,10 @@ function Overview({ alerts }) {
 
   const anomaly = alerts.filter(
     (a) => a.category === "anomaly"
+  ).length;
+
+  const impersonation = alerts.filter(
+    (a) => a.category === "impersonation"
   ).length;
 
   const threatsDetected = alerts.filter((a) =>
@@ -117,7 +120,7 @@ function Overview({ alerts }) {
 
 
       {/* Threat Category Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
 
         {/* Phishing */}
         <div className="bg-gray-800 rounded-xl p-6 shadow-lg">
@@ -151,6 +154,18 @@ function Overview({ alerts }) {
 
           <p className="text-blue-400 text-3xl font-bold mt-2">
             {anomaly}
+          </p>
+        </div>
+
+
+        {/* Impersonation */}
+        <div className="bg-gray-800 rounded-xl p-6 shadow-lg">
+          <p className="text-gray-400 text-sm">
+            Impersonation
+          </p>
+
+          <p className="text-purple-400 text-3xl font-bold mt-2">
+            {impersonation}
           </p>
         </div>
 
@@ -339,7 +354,7 @@ function Overview({ alerts }) {
 
 
           {/* Anomaly */}
-          <div>
+          <div className="mb-6">
 
             <div className="flex justify-between mb-2">
 
@@ -359,6 +374,35 @@ function Overview({ alerts }) {
                 className="bg-blue-400 h-3 rounded-full"
                 style={{
                   width: `${anomaly * 20}%`
+                }}
+              ></div>
+
+            </div>
+
+          </div>
+
+
+          {/* Impersonation */}
+          <div>
+
+            <div className="flex justify-between mb-2">
+
+              <span className="text-gray-300">
+                Impersonation
+              </span>
+
+              <span className="text-purple-400 font-semibold">
+                {impersonation}
+              </span>
+
+            </div>
+
+            <div className="w-full bg-gray-700 rounded-full h-3">
+
+              <div
+                className="bg-purple-400 h-3 rounded-full"
+                style={{
+                  width: `${impersonation * 20}%`
                 }}
               ></div>
 
@@ -453,4 +497,3 @@ function Overview({ alerts }) {
 }
 
 export default Overview;
-

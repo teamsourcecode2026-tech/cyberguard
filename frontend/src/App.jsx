@@ -95,6 +95,7 @@ function App() {
             />
           )}
           {page === "detail" && selectedAlert && <AlertDetail alert={selectedAlert} />}
+          {page === "intelligence" && <ThreatIntelligence />}
         </>
       )}
     </div>
