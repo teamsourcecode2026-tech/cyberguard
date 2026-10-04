@@ -42,7 +42,15 @@ from exfiltration_data import (
     OFF_HOURS_END as EXFIL_OFF_HOURS_END,
     HIGH_RISK_EXTENSIONS,
 )
-
+from user_activity_data import (
+    TYPICAL_LOGIN_HOUR_START,
+    TYPICAL_LOGIN_HOUR_END,
+    FAILED_LOGIN_THRESHOLD,
+    IMPOSSIBLE_TRAVEL_MAX_MINUTES,
+    ADMIN_ACTIONS,
+    SESSION_DURATION_ALERT_HOURS,
+    ACTION_COUNT_ALERT_THRESHOLD,
+)
 ENTROPY_THRESHOLD = 7.2
 READ_LIMIT_BYTES = 5 * 1024 * 1024
 
@@ -475,5 +483,129 @@ def analyze_data_exfiltration(events):
 
     score = min(100, round(risk_points, 1))
     verdict = "Likely Exfiltration" if score >= 60 else "Suspicious" if score >= 25 else "Normal"
+
+    return {"score": score, "verdict": verdict, "indicators": indicators}
+# ---------------------------------------------------------------------------
+# Feature 5: Abnormal user activity
+# ---------------------------------------------------------------------------
+
+def _check_impossible_travel(login_events):
+    """Flag logins from different locations too close together in time
+    to be physically possible."""
+    by_user = defaultdict(list)
+    for event in login_events:
+        by_user[event.get("user_id", "unknown")].append(event)
+
+    flagged = []
+    for user_id, events in by_user.items():
+        sorted_events = sorted(events, key=lambda e: e["timestamp"])
+        for i in range(len(sorted_events) - 1):
+            loc_a = sorted_events[i].get("location")
+            loc_b = sorted_events[i + 1].get("location")
+            if loc_a and loc_b and loc_a != loc_b:
+                minutes_apart = (sorted_events[i + 1]["timestamp"] - sorted_events[i]["timestamp"]).total_seconds() / 60
+                if minutes_apart <= IMPOSSIBLE_TRAVEL_MAX_MINUTES:
+                    flagged.append((user_id, loc_a, loc_b, minutes_apart))
+    return flagged
+
+
+def analyze_user_activity(login_events, action_events=None):
+    """
+    Analyze login and action events for abnormal user behavior.
+
+    Args:
+        login_events: list of dicts, each:
+            {
+                "user_id": str,
+                "success": bool,
+                "location": str (optional, e.g. "Mumbai, IN"),
+                "timestamp": datetime,
+            }
+        action_events: list of dicts (optional), each:
+            {
+                "user_id": str,
+                "action": str,
+                "timestamp": datetime,
+            }
+
+    Returns:
+        dict: {"score": 0-100 (higher = more suspicious),
+               "verdict": "Normal" | "Suspicious" | "Likely Compromised",
+               "indicators": list[str]}
+    """
+    if not login_events and not action_events:
+        return {"score": 0.0, "verdict": "Normal", "indicators": ["No activity data provided"]}
+
+    risk_points = 0.0
+    indicators = []
+    login_events = login_events or []
+    action_events = action_events or []
+
+    by_user_logins = defaultdict(list)
+    for event in login_events:
+        by_user_logins[event.get("user_id", "unknown")].append(event)
+
+    for user_id, events in by_user_logins.items():
+        sorted_events = sorted(events, key=lambda e: e["timestamp"])
+
+        failed_streak = 0
+        for i, event in enumerate(sorted_events):
+            if not event.get("success", True):
+                failed_streak += 1
+            else:
+                if failed_streak >= FAILED_LOGIN_THRESHOLD:
+                    risk_points += 40
+                    indicators.append(
+                        f"User '{user_id}' had {failed_streak} failed logins immediately before a successful one - possible brute force"
+                    )
+                failed_streak = 0
+
+        unusual_hour_logins = [
+            e for e in sorted_events
+            if e.get("success") and isinstance(e.get("timestamp"), datetime) and
+            not (TYPICAL_LOGIN_HOUR_START <= e["timestamp"].hour < TYPICAL_LOGIN_HOUR_END)
+        ]
+        if unusual_hour_logins:
+            risk_points += 15
+            indicators.append(
+                f"User '{user_id}' logged in {len(unusual_hour_logins)} time(s) outside typical hours "
+                f"({TYPICAL_LOGIN_HOUR_START}:00-{TYPICAL_LOGIN_HOUR_END}:00)"
+            )
+
+    travel_flags = _check_impossible_travel(login_events)
+    if travel_flags:
+        risk_points += 50
+        for user_id, loc_a, loc_b, minutes in travel_flags:
+            indicators.append(
+                f"User '{user_id}' logged in from '{loc_a}' then '{loc_b}' only {minutes:.0f} minutes apart - impossible travel"
+            )
+
+    by_user_actions = defaultdict(list)
+    for event in action_events:
+        by_user_actions[event.get("user_id", "unknown")].append(event)
+
+    for user_id, events in by_user_actions.items():
+        admin_attempts = [e for e in events if e.get("action") in ADMIN_ACTIONS]
+        if admin_attempts:
+            risk_points += 35
+            actions_list = ", ".join(sorted(set(e["action"] for e in admin_attempts)))
+            indicators.append(f"User '{user_id}' attempted admin-level actions: {actions_list}")
+
+        if len(events) >= ACTION_COUNT_ALERT_THRESHOLD:
+            risk_points += 20
+            indicators.append(f"User '{user_id}' performed {len(events)} actions - unusually high volume")
+
+        timestamps = [e["timestamp"] for e in events if isinstance(e.get("timestamp"), datetime)]
+        if len(timestamps) >= 2:
+            duration_hours = (max(timestamps) - min(timestamps)).total_seconds() / 3600
+            if duration_hours >= SESSION_DURATION_ALERT_HOURS:
+                risk_points += 15
+                indicators.append(f"User '{user_id}' had an unusually long session: {duration_hours:.1f} hours")
+
+    if not indicators:
+        indicators.append("No abnormal user activity patterns found")
+
+    score = min(100, round(risk_points, 1))
+    verdict = "Likely Compromised" if score >= 60 else "Suspicious" if score >= 25 else "Normal"
 
     return {"score": score, "verdict": verdict, "indicators": indicators}
