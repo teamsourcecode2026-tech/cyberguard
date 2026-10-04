@@ -2,7 +2,8 @@
 import os
 import math
 import hashlib
-from collections import Counter
+from collections import Counter, defaultdict
+from datetime import datetime
 
 from known_bad_hashes import (
     KNOWN_BAD_HASHES,
@@ -10,10 +11,23 @@ from known_bad_hashes import (
     DOCUMENT_LIKE_EXTENSIONS,
     SUSPICIOUS_STRINGS,
 )
+from network_threat_data import (
+    KNOWN_BAD_IPS,
+    SUSPICIOUS_PORTS,
+    LARGE_TRANSFER_THRESHOLD_MB,
+    BEACON_MIN_CONNECTIONS,
+    BEACON_MAX_INTERVAL_VARIANCE_SECONDS,
+    OFF_HOURS_START,
+    OFF_HOURS_END,
+)
 
 ENTROPY_THRESHOLD = 7.2
 READ_LIMIT_BYTES = 5 * 1024 * 1024
 
+
+# ---------------------------------------------------------------------------
+# Feature 1: Malware indicators
+# ---------------------------------------------------------------------------
 
 def _sha256_of_file(path):
     sha256 = hashlib.sha256()
@@ -101,5 +115,123 @@ def analyze_malware_indicators(file_path):
 
     score = min(100, round(risk_points, 1))
     verdict = "Likely Malicious" if score >= 60 else "Suspicious" if score >= 25 else "Clean"
+
+    return {"score": score, "verdict": verdict, "indicators": indicators}
+
+
+# ---------------------------------------------------------------------------
+# Feature 2: Suspicious network traffic
+# ---------------------------------------------------------------------------
+
+def _check_beaconing(connections):
+    """Group connections by destination IP and flag regular, repeated
+    intervals between them - a classic sign of malware 'calling home'."""
+    by_destination = defaultdict(list)
+    for conn in connections:
+        by_destination[conn["dest_ip"]].append(conn["timestamp"])
+
+    beaconing_destinations = []
+    for dest_ip, timestamps in by_destination.items():
+        if len(timestamps) < BEACON_MIN_CONNECTIONS:
+            continue
+        sorted_times = sorted(timestamps)
+        intervals = [
+            (sorted_times[i + 1] - sorted_times[i]).total_seconds()
+            for i in range(len(sorted_times) - 1)
+        ]
+        if not intervals:
+            continue
+        avg_interval = sum(intervals) / len(intervals)
+        variance = sum((i - avg_interval) ** 2 for i in intervals) / len(intervals)
+        std_dev = variance ** 0.5
+        if std_dev <= BEACON_MAX_INTERVAL_VARIANCE_SECONDS:
+            beaconing_destinations.append((dest_ip, len(timestamps), avg_interval))
+
+    return beaconing_destinations
+
+
+def analyze_network_traffic(connections):
+    """
+    Analyze a list of network connection records for suspicious patterns.
+
+    Args:
+        connections: list of dicts, each:
+            {
+                "source_ip": str,
+                "dest_ip": str,
+                "dest_port": int,
+                "data_transferred_mb": float,
+                "timestamp": datetime,
+                "protocol": str (optional, e.g. "TCP"),
+            }
+
+    Returns:
+        dict: {"score": 0-100 (higher = more suspicious),
+               "verdict": "Normal" | "Suspicious" | "Likely Malicious",
+               "indicators": list[str]}
+    """
+    if not connections:
+        return {"score": 0.0, "verdict": "Normal", "indicators": ["No connection data provided"]}
+
+    risk_points = 0.0
+    indicators = []
+
+    bad_ip_hits = set()
+    suspicious_port_hits = set()
+    large_transfers = []
+    off_hours_count = 0
+
+    for conn in connections:
+        dest_ip = conn.get("dest_ip", "")
+        dest_port = conn.get("dest_port")
+        data_mb = conn.get("data_transferred_mb", 0)
+        timestamp = conn.get("timestamp")
+
+        if dest_ip in KNOWN_BAD_IPS:
+            bad_ip_hits.add((dest_ip, KNOWN_BAD_IPS[dest_ip]))
+
+        if dest_port in SUSPICIOUS_PORTS:
+            suspicious_port_hits.add((dest_port, SUSPICIOUS_PORTS[dest_port]))
+
+        if data_mb >= LARGE_TRANSFER_THRESHOLD_MB:
+            large_transfers.append((dest_ip, data_mb))
+
+        if timestamp is not None and isinstance(timestamp, datetime):
+            if OFF_HOURS_START <= timestamp.hour < OFF_HOURS_END:
+                off_hours_count += 1
+
+    if bad_ip_hits:
+        risk_points += 50
+        for ip, reason in bad_ip_hits:
+            indicators.append(f"Connection to known-malicious IP {ip}: {reason}")
+
+    if suspicious_port_hits:
+        risk_points += min(30, 15 * len(suspicious_port_hits))
+        for port, reason in suspicious_port_hits:
+            indicators.append(f"Traffic on suspicious port {port}: {reason}")
+
+    if large_transfers:
+        risk_points += 25
+        for ip, mb in large_transfers:
+            indicators.append(f"Unusually large data transfer to {ip}: {mb:.0f} MB - possible exfiltration")
+
+    beaconing = _check_beaconing(connections)
+    if beaconing:
+        risk_points += 30
+        for dest_ip, count, avg_interval in beaconing:
+            indicators.append(
+                f"Beaconing pattern detected to {dest_ip}: {count} connections, "
+                f"avg {avg_interval:.0f}s apart - possible malware C2 communication"
+            )
+
+    if off_hours_count > 0:
+        risk_points += 10
+        indicators.append(f"{off_hours_count} connection(s) occurred during off-hours ({OFF_HOURS_START}:00-{OFF_HOURS_END}:00)")
+
+    if not indicators:
+        indicators.append("No suspicious network patterns found")
+
+    score = min(100, round(risk_points, 1))
+    verdict = "Likely Malicious" if score >= 60 else "Suspicious" if score >= 25 else "Normal"
 
     return {"score": score, "verdict": verdict, "indicators": indicators}
