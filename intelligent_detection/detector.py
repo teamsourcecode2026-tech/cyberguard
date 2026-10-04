@@ -32,6 +32,16 @@ from network_threat_data import (
     OFF_HOURS_START,
     OFF_HOURS_END,
 )
+from exfiltration_data import (
+    BULK_ACCESS_FILE_COUNT_THRESHOLD,
+    BULK_ACCESS_WINDOW_MINUTES,
+    SENSITIVE_KEYWORDS,
+    SENSITIVE_ACCESS_THRESHOLD,
+    LARGE_EXPORT_THRESHOLD_MB,
+    OFF_HOURS_START as EXFIL_OFF_HOURS_START,
+    OFF_HOURS_END as EXFIL_OFF_HOURS_END,
+    HIGH_RISK_EXTENSIONS,
+)
 
 ENTROPY_THRESHOLD = 7.2
 READ_LIMIT_BYTES = 5 * 1024 * 1024
@@ -356,5 +366,114 @@ def analyze_api_abuse(requests):
 
     score = min(100, round(risk_points, 1))
     verdict = "Likely Abuse" if score >= 60 else "Suspicious" if score >= 25 else "Normal"
+
+    return {"score": score, "verdict": verdict, "indicators": indicators}
+# ---------------------------------------------------------------------------
+# Feature 4: Data exfiltration behavior
+# ---------------------------------------------------------------------------
+
+def _check_bulk_access(events):
+    """Group by user, check if any user accessed too many files within
+    the configured time window."""
+    by_user = defaultdict(list)
+    for event in events:
+        by_user[event.get("user_id", "unknown")].append(event["timestamp"])
+
+    bulk_users = []
+    for user_id, timestamps in by_user.items():
+        sorted_times = sorted(timestamps)
+        for i in range(len(sorted_times)):
+            window_end = sorted_times[i] + timedelta(minutes=BULK_ACCESS_WINDOW_MINUTES)
+            count_in_window = sum(1 for t in sorted_times[i:] if t <= window_end)
+            if count_in_window >= BULK_ACCESS_FILE_COUNT_THRESHOLD:
+                bulk_users.append((user_id, count_in_window))
+                break
+    return bulk_users
+
+
+def analyze_data_exfiltration(events):
+    """
+    Analyze a list of file-access/export events for exfiltration behavior.
+
+    Args:
+        events: list of dicts, each:
+            {
+                "user_id": str,
+                "file_name": str,
+                "action": str ("read" | "download" | "export"),
+                "size_mb": float (optional),
+                "timestamp": datetime,
+            }
+
+    Returns:
+        dict: {"score": 0-100 (higher = more suspicious),
+               "verdict": "Normal" | "Suspicious" | "Likely Exfiltration",
+               "indicators": list[str]}
+    """
+    if not events:
+        return {"score": 0.0, "verdict": "Normal", "indicators": ["No access data provided"]}
+
+    risk_points = 0.0
+    indicators = []
+
+    bulk_users = _check_bulk_access(events)
+    if bulk_users:
+        risk_points += 35
+        for user_id, count in bulk_users:
+            indicators.append(
+                f"User '{user_id}' accessed {count} files within {BULK_ACCESS_WINDOW_MINUTES} minutes - possible bulk collection"
+            )
+
+    by_user_events = defaultdict(list)
+    for event in events:
+        by_user_events[event.get("user_id", "unknown")].append(event)
+
+    for user_id, user_events in by_user_events.items():
+        sensitive_hits = sum(
+            1 for e in user_events
+            if any(kw in str(e.get("file_name", "")).lower() for kw in SENSITIVE_KEYWORDS)
+        )
+        if sensitive_hits >= SENSITIVE_ACCESS_THRESHOLD:
+            risk_points += 30
+            indicators.append(
+                f"User '{user_id}' accessed {sensitive_hits} sensitive-labeled files - unusual volume"
+            )
+
+        total_export_mb = sum(
+            e.get("size_mb", 0) for e in user_events
+            if e.get("action") in ("download", "export")
+        )
+        if total_export_mb >= LARGE_EXPORT_THRESHOLD_MB:
+            risk_points += 30
+            indicators.append(
+                f"User '{user_id}' exported {total_export_mb:.0f} MB total - exceeds normal threshold"
+            )
+
+        off_hours_bulk = [
+            e for e in user_events
+            if isinstance(e.get("timestamp"), datetime) and
+            (e["timestamp"].hour >= EXFIL_OFF_HOURS_START or e["timestamp"].hour < EXFIL_OFF_HOURS_END)
+        ]
+        if len(off_hours_bulk) >= BULK_ACCESS_FILE_COUNT_THRESHOLD // 2:
+            risk_points += 20
+            indicators.append(
+                f"User '{user_id}' had {len(off_hours_bulk)} file access events during off-hours"
+            )
+
+        high_risk_hits = [
+            e.get("file_name", "") for e in user_events
+            if os.path.splitext(str(e.get("file_name", "")))[1].lower() in HIGH_RISK_EXTENSIONS
+        ]
+        if high_risk_hits:
+            risk_points += 25
+            indicators.append(
+                f"User '{user_id}' accessed high-risk file types: {', '.join(set(high_risk_hits))}"
+            )
+
+    if not indicators:
+        indicators.append("No data exfiltration patterns found")
+
+    score = min(100, round(risk_points, 1))
+    verdict = "Likely Exfiltration" if score >= 60 else "Suspicious" if score >= 25 else "Normal"
 
     return {"score": score, "verdict": verdict, "indicators": indicators}
