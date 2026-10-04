@@ -58,6 +58,16 @@ from insider_threat_data import (
     RECENT_HR_INCIDENT_WEIGHT,
     DIRECT_ACCESS_METHODS,
 )
+from system_behavior_data import (
+    SUSPICIOUS_PROCESS_CHAINS,
+    SENSITIVE_CONFIG_KEYS,
+    MAINTENANCE_WINDOW_START,
+    MAINTENANCE_WINDOW_END,
+    CRASH_COUNT_ALERT_THRESHOLD,
+    CRASH_WINDOW_MINUTES,
+    UNUSUAL_EXECUTION_PATHS,
+)
+
 ENTROPY_THRESHOLD = 7.2
 READ_LIMIT_BYTES = 5 * 1024 * 1024
 
@@ -719,5 +729,115 @@ def analyze_insider_threat(employee_profile, activity_events, baseline_daily_act
 
     score = min(100, round(risk_points, 1))
     verdict = "High Risk" if score >= 60 else "Elevated Risk" if score >= 25 else "Normal"
+
+    return {"score": score, "verdict": verdict, "indicators": indicators}
+# ---------------------------------------------------------------------------
+# Feature 7: Unusual system / application behavior
+# ---------------------------------------------------------------------------
+
+def _check_crash_spike(events):
+    by_app = defaultdict(list)
+    for e in events:
+        if e.get("event_type") == "crash":
+            by_app[e.get("application", "unknown")].append(e["timestamp"])
+
+    spikes = []
+    for app, timestamps in by_app.items():
+        sorted_times = sorted(timestamps)
+        for i in range(len(sorted_times)):
+            window_end = sorted_times[i] + timedelta(minutes=CRASH_WINDOW_MINUTES)
+            count_in_window = sum(1 for t in sorted_times[i:] if t <= window_end)
+            if count_in_window >= CRASH_COUNT_ALERT_THRESHOLD:
+                spikes.append((app, count_in_window))
+                break
+    return spikes
+
+
+def analyze_system_behavior(events):
+    """
+    Analyze a list of system/application events for signs of compromise.
+
+    Args:
+        events: list of dicts, each one of:
+            {"event_type": "process_spawn", "parent_process": str,
+             "child_process": str, "timestamp": datetime}
+            {"event_type": "config_change", "config_key": str,
+             "timestamp": datetime}
+            {"event_type": "crash", "application": str, "timestamp": datetime}
+            {"event_type": "new_startup_entry", "entry_name": str,
+             "timestamp": datetime}
+            {"event_type": "process_execution", "binary_path": str,
+             "is_signed": bool (optional), "timestamp": datetime}
+
+    Returns:
+        dict: {"score": 0-100 (higher = more suspicious),
+               "verdict": "Normal" | "Suspicious" | "Likely Compromised",
+               "indicators": list[str]}
+    """
+    if not events:
+        return {"score": 0.0, "verdict": "Normal", "indicators": ["No system event data provided"]}
+
+    risk_points = 0.0
+    indicators = []
+
+    process_spawns = [e for e in events if e.get("event_type") == "process_spawn"]
+    for e in process_spawns:
+        chain = (str(e.get("parent_process", "")).lower(), str(e.get("child_process", "")).lower())
+        if chain in SUSPICIOUS_PROCESS_CHAINS:
+            risk_points += 40
+            indicators.append(
+                f"Suspicious process chain: '{chain[0]}' spawned '{chain[1]}' - possible exploit/macro abuse"
+            )
+
+    config_changes = [e for e in events if e.get("event_type") == "config_change"]
+    for e in config_changes:
+        key = str(e.get("config_key", "")).lower()
+        timestamp = e.get("timestamp")
+        if any(sk in key for sk in SENSITIVE_CONFIG_KEYS):
+            in_maintenance = (
+                isinstance(timestamp, datetime) and
+                MAINTENANCE_WINDOW_START <= timestamp.hour < MAINTENANCE_WINDOW_END
+            )
+            if not in_maintenance:
+                risk_points += 30
+                indicators.append(
+                    f"Sensitive config changed outside maintenance window: '{e.get('config_key')}'"
+                )
+
+    crash_spikes = _check_crash_spike(events)
+    if crash_spikes:
+        risk_points += 25
+        for app, count in crash_spikes:
+            indicators.append(
+                f"'{app}' crashed {count} times within {CRASH_WINDOW_MINUTES} minutes - possible exploitation attempt"
+            )
+
+    startup_entries = [e for e in events if e.get("event_type") == "new_startup_entry"]
+    if startup_entries:
+        risk_points += 30
+        names = ", ".join(set(e.get("entry_name", "unknown") for e in startup_entries))
+        indicators.append(f"New startup/autorun entries added: {names} - possible persistence mechanism")
+
+    executions = [e for e in events if e.get("event_type") == "process_execution"]
+    for e in executions:
+        path = str(e.get("binary_path", "")).lower()
+        is_signed = e.get("is_signed", True)
+        in_unusual_path = any(up in path for up in UNUSUAL_EXECUTION_PATHS)
+        if in_unusual_path and not is_signed:
+            risk_points += 35
+            indicators.append(
+                f"Unsigned executable ran from unusual location: '{e.get('binary_path')}'"
+            )
+        elif in_unusual_path:
+            risk_points += 10
+            indicators.append(
+                f"Executable ran from unusual location: '{e.get('binary_path')}'"
+            )
+
+    if not indicators:
+        indicators.append("No unusual system behavior found")
+
+    score = min(100, round(risk_points, 1))
+    verdict = "Likely Compromised" if score >= 60 else "Suspicious" if score >= 25 else "Normal"
 
     return {"score": score, "verdict": verdict, "indicators": indicators}
