@@ -3,7 +3,19 @@ import os
 import math
 import hashlib
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime,timedelta
+from collections import Counter
+
+from api_abuse_data import (
+    RATE_LIMIT_MAX_REQUESTS,
+    RATE_LIMIT_WINDOW_SECONDS,
+    AUTH_FAILURE_CODES,
+    AUTH_FAILURE_RATE_THRESHOLD,
+    ERROR_CODES,
+    ERROR_RATE_THRESHOLD,
+    ENDPOINT_ENUMERATION_THRESHOLD,
+    INJECTION_PATTERNS,
+)
 
 from known_bad_hashes import (
     KNOWN_BAD_HASHES,
@@ -233,5 +245,116 @@ def analyze_network_traffic(connections):
 
     score = min(100, round(risk_points, 1))
     verdict = "Likely Malicious" if score >= 60 else "Suspicious" if score >= 25 else "Normal"
+
+    return {"score": score, "verdict": verdict, "indicators": indicators}
+# ---------------------------------------------------------------------------
+# Feature 3: API abuse
+# ---------------------------------------------------------------------------
+
+def _check_rate_limit_violations(requests):
+    """Group by client, check if any client exceeded the allowed
+    request count within the configured time window."""
+    by_client = defaultdict(list)
+    for req in requests:
+        by_client[req.get("client_id", "unknown")].append(req["timestamp"])
+
+    violators = []
+    for client_id, timestamps in by_client.items():
+        sorted_times = sorted(timestamps)
+        for i in range(len(sorted_times)):
+            window_end = sorted_times[i] + timedelta(seconds=RATE_LIMIT_WINDOW_SECONDS)
+            count_in_window = sum(1 for t in sorted_times[i:] if t <= window_end)
+            if count_in_window > RATE_LIMIT_MAX_REQUESTS:
+                violators.append((client_id, count_in_window))
+                break
+    return violators
+
+
+def _check_injection_attempts(requests):
+    hits = []
+    for req in requests:
+        params = str(req.get("query_params", "")).lower()
+        endpoint = str(req.get("endpoint", "")).lower()
+        combined = f"{endpoint} {params}"
+        for pattern in INJECTION_PATTERNS:
+            if pattern in combined:
+                hits.append((req.get("client_id", "unknown"), pattern))
+    return hits
+
+
+def analyze_api_abuse(requests):
+    """
+    Analyze a list of API request records for abuse patterns.
+
+    Args:
+        requests: list of dicts, each:
+            {
+                "client_id": str,
+                "endpoint": str,
+                "method": str (optional),
+                "status_code": int,
+                "timestamp": datetime,
+                "query_params": str (optional),
+            }
+
+    Returns:
+        dict: {"score": 0-100 (higher = more suspicious),
+               "verdict": "Normal" | "Suspicious" | "Likely Abuse",
+               "indicators": list[str]}
+    """
+    if not requests:
+        return {"score": 0.0, "verdict": "Normal", "indicators": ["No request data provided"]}
+
+    risk_points = 0.0
+    indicators = []
+
+    rate_violators = _check_rate_limit_violations(requests)
+    if rate_violators:
+        risk_points += 35
+        for client_id, count in rate_violators:
+            indicators.append(
+                f"Client '{client_id}' exceeded rate limit: {count} requests within "
+                f"{RATE_LIMIT_WINDOW_SECONDS}s (limit: {RATE_LIMIT_MAX_REQUESTS})"
+            )
+
+    by_client_requests = defaultdict(list)
+    for req in requests:
+        by_client_requests[req.get("client_id", "unknown")].append(req)
+
+    for client_id, client_reqs in by_client_requests.items():
+        total = len(client_reqs)
+        auth_failures = sum(1 for r in client_reqs if r.get("status_code") in AUTH_FAILURE_CODES)
+        if total >= 5 and (auth_failures / total) >= AUTH_FAILURE_RATE_THRESHOLD:
+            risk_points += 40
+            indicators.append(
+                f"Client '{client_id}' has a high auth-failure rate: "
+                f"{auth_failures}/{total} requests ({auth_failures/total*100:.0f}%) - possible credential stuffing"
+            )
+
+        distinct_endpoints = len(set(r.get("endpoint") for r in client_reqs))
+        if distinct_endpoints >= ENDPOINT_ENUMERATION_THRESHOLD:
+            risk_points += 25
+            indicators.append(
+                f"Client '{client_id}' hit {distinct_endpoints} distinct endpoints - possible scanning/enumeration"
+            )
+
+        errors = sum(1 for r in client_reqs if r.get("status_code") in ERROR_CODES)
+        if total >= 5 and (errors / total) >= ERROR_RATE_THRESHOLD:
+            risk_points += 15
+            indicators.append(
+                f"Client '{client_id}' has a high error rate: {errors}/{total} requests ({errors/total*100:.0f}%)"
+            )
+
+    injection_hits = _check_injection_attempts(requests)
+    if injection_hits:
+        risk_points += min(40, 15 * len(set(injection_hits)))
+        for client_id, pattern in set(injection_hits):
+            indicators.append(f"Client '{client_id}' sent a request containing injection pattern: '{pattern}'")
+
+    if not indicators:
+        indicators.append("No API abuse patterns found")
+
+    score = min(100, round(risk_points, 1))
+    verdict = "Likely Abuse" if score >= 60 else "Suspicious" if score >= 25 else "Normal"
 
     return {"score": score, "verdict": verdict, "indicators": indicators}
