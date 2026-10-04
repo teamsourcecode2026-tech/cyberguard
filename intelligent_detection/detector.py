@@ -51,6 +51,13 @@ from user_activity_data import (
     SESSION_DURATION_ALERT_HOURS,
     ACTION_COUNT_ALERT_THRESHOLD,
 )
+from insider_threat_data import (
+    DEPARTMENT_DATA_SCOPE,
+    RESIGNATION_RISK_WINDOW_DAYS,
+    BASELINE_MULTIPLIER_ALERT,
+    RECENT_HR_INCIDENT_WEIGHT,
+    DIRECT_ACCESS_METHODS,
+)
 ENTROPY_THRESHOLD = 7.2
 READ_LIMIT_BYTES = 5 * 1024 * 1024
 
@@ -607,5 +614,110 @@ def analyze_user_activity(login_events, action_events=None):
 
     score = min(100, round(risk_points, 1))
     verdict = "Likely Compromised" if score >= 60 else "Suspicious" if score >= 25 else "Normal"
+
+    return {"score": score, "verdict": verdict, "indicators": indicators}
+# ---------------------------------------------------------------------------
+# Feature 6: Insider threats
+# ---------------------------------------------------------------------------
+
+def analyze_insider_threat(employee_profile, activity_events, baseline_daily_actions=None):
+    """
+    Analyze an employee's profile and recent activity for insider-threat
+    risk signals. Designed to be reviewed periodically (e.g. weekly),
+    not necessarily in real time.
+
+    Args:
+        employee_profile: dict:
+            {
+                "user_id": str,
+                "department": str (lowercase, e.g. "finance"),
+                "is_resigning": bool (optional),
+                "resignation_date": datetime (optional),
+                "recent_hr_incident": bool (optional),
+                "today": datetime (optional, defaults to datetime.now()),
+            }
+        activity_events: list of dicts, each:
+            {
+                "data_category": str (e.g. "financial_records"),
+                "access_method": str (optional, e.g. "usb_copy"),
+                "timestamp": datetime,
+            }
+        baseline_daily_actions: float (optional) - this employee's
+            typical number of actions per day, for comparison.
+
+    Returns:
+        dict: {"score": 0-100 (higher = more suspicious),
+               "verdict": "Normal" | "Elevated Risk" | "High Risk",
+               "indicators": list[str]}
+    """
+    if not activity_events:
+        return {"score": 0.0, "verdict": "Normal", "indicators": ["No activity data provided"]}
+
+    risk_points = 0.0
+    indicators = []
+
+    user_id = employee_profile.get("user_id", "unknown")
+    department = employee_profile.get("department", "").lower()
+    is_resigning = employee_profile.get("is_resigning", False)
+    resignation_date = employee_profile.get("resignation_date")
+    recent_hr_incident = employee_profile.get("recent_hr_incident", False)
+    today = employee_profile.get("today", datetime.now())
+
+    near_resignation = False
+    if is_resigning and resignation_date:
+        days_to_resignation = abs((resignation_date - today).days)
+        if days_to_resignation <= RESIGNATION_RISK_WINDOW_DAYS:
+            near_resignation = True
+
+    allowed_scope = DEPARTMENT_DATA_SCOPE.get(department, set())
+    out_of_scope_hits = [
+        e for e in activity_events
+        if e.get("data_category") and e["data_category"] not in allowed_scope
+    ]
+
+    if out_of_scope_hits:
+        multiplier = 2 if near_resignation else 1
+        risk_points += 30 * multiplier
+        categories = ", ".join(sorted(set(e["data_category"] for e in out_of_scope_hits)))
+        note = " (heightened: employee is near resignation)" if near_resignation else ""
+        indicators.append(
+            f"User '{user_id}' (dept: {department or 'unknown'}) accessed out-of-scope data: {categories}{note}"
+        )
+
+    if baseline_daily_actions and baseline_daily_actions > 0:
+        timestamps = [e["timestamp"] for e in activity_events if isinstance(e.get("timestamp"), datetime)]
+        if timestamps:
+            days_span = max((max(timestamps) - min(timestamps)).days, 1)
+            daily_rate = len(activity_events) / days_span
+            if daily_rate >= baseline_daily_actions * BASELINE_MULTIPLIER_ALERT:
+                risk_points += 35
+                indicators.append(
+                    f"User '{user_id}' activity rate ({daily_rate:.1f}/day) is "
+                    f"{daily_rate/baseline_daily_actions:.1f}x their normal baseline ({baseline_daily_actions}/day)"
+                )
+
+    direct_access_hits = [e for e in activity_events if e.get("access_method") in DIRECT_ACCESS_METHODS]
+    if direct_access_hits:
+        risk_points += 25
+        methods = ", ".join(set(e["access_method"] for e in direct_access_hits))
+        indicators.append(f"User '{user_id}' used direct/unaudited access methods: {methods}")
+
+    if recent_hr_incident and (out_of_scope_hits or direct_access_hits):
+        risk_points += RECENT_HR_INCIDENT_WEIGHT
+        indicators.append(
+            f"User '{user_id}' has a recent HR incident on file, combined with the above activity - elevated concern"
+        )
+
+    if near_resignation and len(activity_events) > 0 and not out_of_scope_hits and not direct_access_hits:
+        risk_points += 10
+        indicators.append(
+            f"User '{user_id}' is within {RESIGNATION_RISK_WINDOW_DAYS} days of resignation - routine heightened monitoring"
+        )
+
+    if not indicators:
+        indicators.append("No insider-threat risk signals found")
+
+    score = min(100, round(risk_points, 1))
+    verdict = "High Risk" if score >= 60 else "Elevated Risk" if score >= 25 else "Normal"
 
     return {"score": score, "verdict": verdict, "indicators": indicators}
