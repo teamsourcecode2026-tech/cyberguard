@@ -53,41 +53,26 @@ function App() {
             </span>
           </div>
 
-          <div className="flex gap-6">
-            <button
-              onClick={() => setPage("overview")}
-              className="text-gray-300 hover:text-white font-medium"
-            >
-              Overview
-            </button>
-
-            <button
-              onClick={() => setPage("scan")}
-              className="text-gray-300 hover:text-white font-medium"
-            >
-              Scan Center
-            </button>
-
-            <button
-              onClick={() => setPage("feed")}
-              className="text-gray-300 hover:text-white font-medium"
-            >
-              Threat Feed
-            </button>
-
-            <button
-              onClick={() => setPage("detail")}
-              className="text-gray-300 hover:text-white font-medium"
-            >
-              Alert Detail
-            </button>
-
-            <button
-              onClick={() => setPage("intelligence")}
-              className="text-gray-300 hover:text-white font-medium"
-            >
-              Threat Intelligence
-            </button>
+          <div className="flex gap-1">
+            {[
+              { id: "overview", label: "Overview" },
+              { id: "scan", label: "Scan Center" },
+              { id: "feed", label: "Threat Feed" },
+              { id: "detail", label: "Alert Detail" },
+              { id: "intelligence", label: "Intelligence" },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setPage(tab.id)}
+                className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                  page === tab.id
+                    ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
+                    : "text-gray-400 hover:text-white hover:bg-gray-800"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 

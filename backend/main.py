@@ -50,13 +50,18 @@ from detectors import (
     analyze_insider_threat,
     analyze_system_behavior,
 )
-app = FastAPI()
+app = FastAPI(title="CyberGuard API", version="2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Authorization"],
 )
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "version": "2.0", "service": "CyberGuard"}
 
 # ---- Endpoints ----
 

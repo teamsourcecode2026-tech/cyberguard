@@ -53,6 +53,26 @@ const GROUPS = [
       "account_theft_behaviour_change",
     ],
   },
+  {
+    label: "Intelligent Detection",
+    color: "cyan",
+    icon: "🧠",
+    categories: [
+      "malware",
+      "network_traffic",
+      "api_abuse",
+      "data_exfiltration",
+      "user_activity",
+      "insider_threat",
+      "system_behavior",
+    ],
+  },
+  {
+    label: "Email Authentication",
+    color: "green",
+    icon: "📧",
+    categories: ["email_auth"],
+  },
 ];
 
 const colorClasses = {
@@ -80,6 +100,16 @@ const colorClasses = {
     text: "text-blue-400",
     bar: "bg-blue-400",
     border: "border-blue-500/30",
+  },
+  cyan: {
+    text: "text-cyan-400",
+    bar: "bg-cyan-400",
+    border: "border-cyan-500/30",
+  },
+  green: {
+    text: "text-green-400",
+    bar: "bg-green-400",
+    border: "border-green-500/30",
   },
 };
 
@@ -262,7 +292,7 @@ function Overview({ alerts = [] }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4">
 
           {groupCounts.map((group) => (
             <div
@@ -634,7 +664,7 @@ function Overview({ alerts = [] }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4">
 
           {GROUPS.map((group) => (
             <div
