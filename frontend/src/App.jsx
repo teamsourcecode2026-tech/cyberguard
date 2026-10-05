@@ -17,9 +17,10 @@ function App() {
   useEffect(() => {
     if (loggedIn) {
       setLoading(true);
-      getAlerts().then((data) => {
-        setAlerts(data);
-        setSelectedAlert(data[0] || null);
+
+      getAlerts().then((result) => {
+        setAlerts(result.data);
+        setSelectedAlert(result.data[0] || null);
         setLoading(false);
       });
     }
@@ -42,14 +43,34 @@ function App() {
         <div className="flex items-center gap-8">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🛡️</span>
+
             <span className="text-white font-bold text-lg tracking-wide">
               CyberGuard
             </span>
           </div>
+
           <div className="flex gap-6">
-            <button onClick={() => setPage("overview")} className="text-gray-300 hover:text-white font-medium">Overview</button>
-            <button onClick={() => setPage("feed")} className="text-gray-300 hover:text-white font-medium">Threat Feed</button>
-            <button onClick={() => setPage("detail")} className="text-gray-300 hover:text-white font-medium">Alert Detail</button>
+            <button
+              onClick={() => setPage("overview")}
+              className="text-gray-300 hover:text-white font-medium"
+            >
+              Overview
+            </button>
+
+            <button
+              onClick={() => setPage("feed")}
+              className="text-gray-300 hover:text-white font-medium"
+            >
+              Threat Feed
+            </button>
+
+            <button
+              onClick={() => setPage("detail")}
+              className="text-gray-300 hover:text-white font-medium"
+            >
+              Alert Detail
+            </button>
+
             <button
               onClick={() => setPage("intelligence")}
               className="text-gray-300 hover:text-white font-medium"
@@ -58,8 +79,12 @@ function App() {
             </button>
           </div>
         </div>
+
         <div className="flex items-center gap-4">
-          <span className="text-gray-400 text-sm">Hi, {username}</span>
+          <span className="text-gray-400 text-sm">
+            Hi, {username}
+          </span>
+
           <button
             onClick={() => {
               setLoggedIn(false);
@@ -79,12 +104,18 @@ function App() {
         <div className="min-h-screen bg-gray-900 flex items-center justify-center">
           <div className="text-center">
             <div className="w-10 h-10 border-4 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-gray-400">Loading alerts...</p>
+
+            <p className="text-gray-400">
+              Loading alerts...
+            </p>
           </div>
         </div>
       ) : (
         <>
-          {page === "overview" && <Overview alerts={alerts} />}
+          {page === "overview" && (
+            <Overview alerts={alerts} />
+          )}
+
           {page === "feed" && (
             <ThreatFeed
               alerts={alerts}
@@ -94,8 +125,14 @@ function App() {
               }}
             />
           )}
-          {page === "detail" && selectedAlert && <AlertDetail alert={selectedAlert} />}
-          {page === "intelligence" && <ThreatIntelligence />}
+
+          {page === "detail" && selectedAlert && (
+            <AlertDetail alert={selectedAlert} />
+          )}
+
+          {page === "intelligence" && (
+            <ThreatIntelligence alert={selectedAlert} />
+          )}
         </>
       )}
     </div>
