@@ -3,9 +3,28 @@ import mockData from "./mockData";
 const BASE_URL = "http://localhost:8000";
 const AUTH_URL = "http://localhost:8000";
 
+// --- JWT Token Management ---
+export function getToken() { return localStorage.getItem("cyberguard_token"); }
+export function setToken(token) { localStorage.setItem("cyberguard_token", token); }
+export function clearToken() { localStorage.removeItem("cyberguard_token"); }
+
+function authHeaders() {
+  const token = getToken();
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
+
+function authHeadersNoContent() {
+  const token = getToken();
+  const headers = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
+
 export async function getAlerts() {
   try {
-    const res = await fetch(`${BASE_URL}/api/alerts`);
+    const res = await fetch(`${BASE_URL}/api/alerts`, { headers: authHeadersNoContent() });
     if (!res.ok) throw new Error("Backend error");
     return { data: await res.json(), isMock: false };
   } catch (err) {
@@ -21,7 +40,11 @@ export async function loginUser(username, password) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
     });
-    return await res.json();
+    const data = await res.json();
+    if (data.success && data.token) {
+      setToken(data.token);
+    }
+    return data;
   } catch (err) {
     return { success: false, message: "Cannot reach login server" };
   }
@@ -40,12 +63,12 @@ export async function registerUser(username, password) {
   }
 }
 
-// --- Generic Submissions ---
+// --- Generic Submissions (with auth) ---
 async function submitText(endpoint, text) {
   try {
     const res = await fetch(`${BASE_URL}${endpoint}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ text }),
     });
     return await res.json();
@@ -58,7 +81,7 @@ async function submitUrl(endpoint, url) {
   try {
     const res = await fetch(`${BASE_URL}${endpoint}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ url }),
     });
     return await res.json();
@@ -71,9 +94,24 @@ async function submitFile(endpoint, file) {
   try {
     const formData = new FormData();
     formData.append("file", file);
+    const headers = authHeadersNoContent();
     const res = await fetch(`${BASE_URL}${endpoint}`, {
       method: "POST",
+      headers,
       body: formData,
+    });
+    return await res.json();
+  } catch (err) {
+    return { error: "Failed to connect to backend" };
+  }
+}
+
+async function submitJson(endpoint, payload) {
+  try {
+    const res = await fetch(`${BASE_URL}${endpoint}`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
     });
     return await res.json();
   } catch (err) {
@@ -100,3 +138,18 @@ export const analyzeFakeLogin = (url) => submitUrl("/api/ingest/fake-login", url
 // --- File Endpoints ---
 export const analyzeDeepfake = (file) => submitFile("/api/ingest/deepfake", file);
 export const analyzeQr = (file) => submitFile("/api/ingest/qr", file);
+export const analyzeMalware = (file) => submitFile("/api/ingest/malware", file);
+
+// --- Anomaly & Account Theft ---
+export const analyzeAnomalyLog = (logData) => submitText("/api/ingest/log", JSON.stringify(logData));
+
+// --- Intelligent Detection Endpoints ---
+export const analyzeNetworkTraffic = (connections) => submitJson("/api/ingest/network", { connections });
+export const analyzeApiAbuse = (requests) => submitJson("/api/ingest/api-abuse", { requests });
+export const analyzeExfiltration = (events) => submitJson("/api/ingest/exfiltration", { events });
+export const analyzeUserActivity = (login_events, action_events = []) => submitJson("/api/ingest/user-activity", { login_events, action_events });
+export const analyzeInsiderThreat = (employee, activity_events, baseline_daily_actions = null) => submitJson("/api/ingest/insider-threat", { employee, activity_events, baseline_daily_actions });
+export const analyzeSystemBehavior = (events) => submitJson("/api/ingest/system-behavior", { events });
+
+// --- Email Authentication (SPF/DKIM/DMARC) ---
+export const analyzeEmailAuth = (sender_domain, sender_ip = null, dkim_selector = "default") => submitJson("/api/ingest/email-auth", { sender_domain, sender_ip, dkim_selector });

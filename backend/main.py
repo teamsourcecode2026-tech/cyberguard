@@ -1,7 +1,7 @@
 import os
 import sys
 import tempfile
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -9,12 +9,14 @@ from datetime import datetime
 import bcrypt
 import pandas as pd
 from impersonation_detector import analyze_impersonation
+from auth import create_access_token, get_current_user, require_auth
 
 from database import events, phishing_results, anomaly_results, deepfake_results, impersonation_results, alerts, users
 from risk_scoring import score_and_explain
 from phishing_model import analyze_phishing
 from anomaly_model import analyze_anomaly
 from deepfake_model import analyze_deepfake
+from email_auth_checker import analyze_email_auth
 
 # Import all orphaned detectors
 from detectors import (
@@ -39,6 +41,14 @@ from detectors import (
     detect_unusual_login_time,
     detect_session_anomalies,
     detect_behaviour_change,
+    # intelligent_detection
+    analyze_malware_indicators,
+    analyze_network_traffic,
+    analyze_api_abuse,
+    analyze_data_exfiltration,
+    analyze_user_activity,
+    analyze_insider_threat,
+    analyze_system_behavior,
 )
 app = FastAPI()
 app.add_middleware(
@@ -335,7 +345,181 @@ def ingest_account_theft(body: BatchLoginLogs):
 
     return {"total_alerts": len(all_alerts), "alerts": all_alerts}
 
-# ---- Query Endpoints ----
+# ---- Intelligent Detection Endpoints ----
+
+@app.post("/api/ingest/malware")
+def ingest_malware(file: UploadFile = File(...)):
+    suffix = os.path.splitext(file.filename)[1] or ".bin"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(file.file.read())
+        tmp_path = tmp.name
+    try:
+        result = analyze_malware_indicators(tmp_path)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+    return _save_and_alert(result, "malware", file.filename, "Quarantine file and investigate")
+
+class NetworkConnection(BaseModel):
+    source_ip: str
+    dest_ip: str
+    dest_port: int
+    data_transferred_mb: float = 0.0
+    timestamp: str
+    protocol: str = "TCP"
+
+class NetworkTrafficInput(BaseModel):
+    connections: List[NetworkConnection]
+
+@app.post("/api/ingest/network")
+def ingest_network(body: NetworkTrafficInput):
+    connections = []
+    for c in body.connections:
+        d = c.model_dump()
+        d["timestamp"] = datetime.fromisoformat(d["timestamp"])
+        connections.append(d)
+    result = analyze_network_traffic(connections)
+    return _save_and_alert(result, "network_traffic", f"{len(connections)} connections", "Block suspicious IPs and investigate")
+
+class ApiRequest(BaseModel):
+    client_id: str
+    endpoint: str
+    method: str = "GET"
+    status_code: int
+    timestamp: str
+    query_params: str = ""
+
+class ApiAbuseInput(BaseModel):
+    requests: List[ApiRequest]
+
+@app.post("/api/ingest/api-abuse")
+def ingest_api_abuse(body: ApiAbuseInput):
+    requests_data = []
+    for r in body.requests:
+        d = r.model_dump()
+        d["timestamp"] = datetime.fromisoformat(d["timestamp"])
+        requests_data.append(d)
+    result = analyze_api_abuse(requests_data)
+    return _save_and_alert(result, "api_abuse", f"{len(requests_data)} requests", "Rate limit and block abusive clients")
+
+class FileAccessEvent(BaseModel):
+    user_id: str
+    file_name: str
+    action: str  # "read" | "download" | "export"
+    size_mb: float = 0.0
+    timestamp: str
+
+class ExfiltrationInput(BaseModel):
+    events: List[FileAccessEvent]
+
+@app.post("/api/ingest/exfiltration")
+def ingest_exfiltration(body: ExfiltrationInput):
+    events_data = []
+    for e in body.events:
+        d = e.model_dump()
+        d["timestamp"] = datetime.fromisoformat(d["timestamp"])
+        events_data.append(d)
+    result = analyze_data_exfiltration(events_data)
+    return _save_and_alert(result, "data_exfiltration", f"{len(events_data)} events", "Revoke access and investigate")
+
+class LoginEvent(BaseModel):
+    user_id: str
+    success: bool
+    location: Optional[str] = None
+    timestamp: str
+
+class ActionEvent(BaseModel):
+    user_id: str
+    action: str
+    timestamp: str
+
+class UserActivityInput(BaseModel):
+    login_events: List[LoginEvent]
+    action_events: List[ActionEvent] = []
+
+@app.post("/api/ingest/user-activity")
+def ingest_user_activity(body: UserActivityInput):
+    logins = []
+    for e in body.login_events:
+        d = e.model_dump()
+        d["timestamp"] = datetime.fromisoformat(d["timestamp"])
+        logins.append(d)
+    actions = []
+    for e in body.action_events:
+        d = e.model_dump()
+        d["timestamp"] = datetime.fromisoformat(d["timestamp"])
+        actions.append(d)
+    result = analyze_user_activity(logins, actions if actions else None)
+    return _save_and_alert(result, "user_activity", f"{len(logins)} logins", "Lock account and investigate")
+
+class EmployeeProfile(BaseModel):
+    user_id: str
+    department: str
+    is_resigning: bool = False
+    resignation_date: Optional[str] = None
+    recent_hr_incident: bool = False
+
+class InsiderActivityEvent(BaseModel):
+    data_category: str
+    access_method: str = ""
+    timestamp: str
+
+class InsiderThreatInput(BaseModel):
+    employee: EmployeeProfile
+    activity_events: List[InsiderActivityEvent]
+    baseline_daily_actions: Optional[float] = None
+
+@app.post("/api/ingest/insider-threat")
+def ingest_insider_threat(body: InsiderThreatInput):
+    profile = body.employee.model_dump()
+    if profile.get("resignation_date"):
+        profile["resignation_date"] = datetime.fromisoformat(profile["resignation_date"])
+    profile["today"] = datetime.now()
+    events_data = []
+    for e in body.activity_events:
+        d = e.model_dump()
+        d["timestamp"] = datetime.fromisoformat(d["timestamp"])
+        events_data.append(d)
+    result = analyze_insider_threat(profile, events_data, body.baseline_daily_actions)
+    return _save_and_alert(result, "insider_threat", profile["user_id"], "Escalate to security team")
+
+class SystemEvent(BaseModel):
+    event_type: str  # "process_spawn", "config_change", "crash", "new_startup_entry", "process_execution"
+    timestamp: str
+    parent_process: Optional[str] = None
+    child_process: Optional[str] = None
+    config_key: Optional[str] = None
+    application: Optional[str] = None
+    entry_name: Optional[str] = None
+    binary_path: Optional[str] = None
+    is_signed: Optional[bool] = None
+
+class SystemBehaviorInput(BaseModel):
+    events: List[SystemEvent]
+
+@app.post("/api/ingest/system-behavior")
+def ingest_system_behavior(body: SystemBehaviorInput):
+    events_data = []
+    for e in body.events:
+        d = e.model_dump()
+        d["timestamp"] = datetime.fromisoformat(d["timestamp"])
+        events_data.append(d)
+    result = analyze_system_behavior(events_data)
+    return _save_and_alert(result, "system_behavior", f"{len(events_data)} events", "Isolate system and investigate")
+
+# ---- Email Authentication (SPF/DKIM/DMARC) ----
+
+class EmailAuthInput(BaseModel):
+    sender_domain: str
+    sender_ip: Optional[str] = None
+    dkim_selector: str = "default"
+
+@app.post("/api/ingest/email-auth")
+def ingest_email_auth(body: EmailAuthInput):
+    result = analyze_email_auth(body.sender_domain, body.sender_ip, body.dkim_selector)
+    return _save_and_alert(result, "email_auth", body.sender_domain, "Block spoofed emails from this domain")
 
 # ---- Query Endpoints ----
 
@@ -390,6 +574,8 @@ def get_stats():
         "account_theft_new_device_ip", "account_theft_password_spraying",
         "account_theft_unusual_login_time", "account_theft_session_anomaly",
         "account_theft_behaviour_change",
+        "malware", "network_traffic", "api_abuse", "data_exfiltration",
+        "user_activity", "insider_threat", "system_behavior", "email_auth",
     ]
     levels = ["Safe", "Low", "Medium", "High", "Critical"]
     return {
@@ -438,5 +624,17 @@ def login(data: LoginRequest):
     if not bcrypt.checkpw(entered_password, stored_hash):
         return {"success": False, "message": "Incorrect password"}
 
-    return {"success": True, "message": "Login successful", "username": data.username}
+    # Generate JWT token
+    token = create_access_token(data={"sub": data.username})
 
+    return {
+        "success": True,
+        "message": "Login successful",
+        "username": data.username,
+        "token": token
+    }
+
+@app.get("/api/me")
+def get_me(current_user: dict = Depends(require_auth)):
+    """Returns the current authenticated user's info."""
+    return {"username": current_user["sub"], "authenticated": True}

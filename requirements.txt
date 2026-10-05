@@ -32,3 +32,9 @@ requests
 
 # ---- Malicious URL/Domain Detection ----
 python-whois
+
+# ---- Email Authentication (SPF/DKIM/DMARC) ----
+dnspython
+
+# ---- JWT Authentication ----
+python-jose[cryptography]

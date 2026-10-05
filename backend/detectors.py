@@ -12,8 +12,9 @@ _project_root = os.path.dirname(os.path.dirname(__file__))
 _ml_phishing_dir = os.path.join(_project_root, "ml_phishing")
 _malicious_url_dir = os.path.join(_project_root, "malicious_url_website")
 _theft_dir = os.path.join(_project_root, "theft_account_detection")
+_intelligent_dir = os.path.join(_project_root, "intelligent_detection")
 
-for _dir in [_ml_phishing_dir, _malicious_url_dir, _theft_dir]:
+for _dir in [_ml_phishing_dir, _malicious_url_dir, _theft_dir, _intelligent_dir]:
     if _dir not in sys.path:
         sys.path.insert(0, _dir)
 
@@ -40,3 +41,12 @@ from password_spraying_detector import detect_password_spraying
 from unusual_login_time_detector import detect_unusual_login_time
 from session_anomaly_detector import detect_session_anomalies
 from behaviour_change_detector import detect_behaviour_change
+
+# ---- intelligent_detection detectors ----
+from detector import analyze_malware_indicators
+from detector import analyze_network_traffic
+from detector import analyze_api_abuse
+from detector import analyze_data_exfiltration
+from detector import analyze_user_activity
+from detector import analyze_insider_threat
+from detector import analyze_system_behavior

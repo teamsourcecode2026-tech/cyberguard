@@ -5,7 +5,7 @@ import ThreatFeed from "./pages/ThreatFeed";
 import AlertDetail from "./pages/AlertDetail";
 import ThreatIntelligence from "./pages/ThreatIntelligence";
 import ScanCenter from "./pages/ScanCenter";
-import { getAlerts } from "./api";
+import { getAlerts, clearToken } from "./api";
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
@@ -98,6 +98,7 @@ function App() {
 
           <button
             onClick={() => {
+              clearToken();
               setLoggedIn(false);
               setUsername("");
               setAlerts([]);
