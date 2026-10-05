@@ -49,9 +49,9 @@ def _ai_art_prob(result):
 
 
 def _verdict_from_score(score):
-    if score >= 70:
+    if score >= 55:
         return "Likely Manipulated"
-    elif score >= 40:
+    elif score >= 20:
         return "Suspicious"
     else:
         return "Authentic"
