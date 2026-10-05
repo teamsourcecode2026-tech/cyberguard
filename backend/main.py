@@ -337,9 +337,39 @@ def ingest_account_theft(body: BatchLoginLogs):
 
 # ---- Query Endpoints ----
 
+# ---- Query Endpoints ----
+
+class StatusUpdate(BaseModel):
+    status: str
+
+VALID_STATUSES = ["new", "investigating", "resolved"]
+
+@app.patch("/api/alerts/{event_id}/status")
+def update_alert_status(event_id: str, update: StatusUpdate):
+    if update.status not in VALID_STATUSES:
+        return {"error": f"Invalid status. Must be one of {VALID_STATUSES}"}
+
+    result = alerts.update_one(
+        {"event_id": event_id},
+        {"$set": {"status": update.status}}
+    )
+
+    if result.matched_count == 0:
+        return {"error": "Alert not found"}
+
+    return {"event_id": event_id, "status": update.status, "message": "Status updated"}
+
 @app.get("/api/alerts")
-def get_alerts():
-    results = list(alerts.find({}, {"_id": 0}))
+def get_alerts(risk_level: Optional[str] = None, category: Optional[str] = None, status: Optional[str] = None):
+    query = {}
+    if risk_level:
+        query["overall_risk_level"] = risk_level
+    if category:
+        query["category"] = category
+    if status:
+        query["status"] = status
+
+    results = list(alerts.find(query, {"_id": 0}))
     return results
 
 @app.get("/api/alerts/{event_id}")

@@ -1,10 +1,19 @@
 import json
+import os
+import sys
 from datetime import datetime, timedelta
 
 import pandas as pd
 
+# Tell Python where to find risk_scoring.py (in the sibling "ml_anomaly" folder)
+sys.path.append(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend")
+)
+
+from risk_scoring import score_and_explain
+
 # ---- Settings (change these to tune sensitivity) ----
-MIN_EVENTS = 3            # a session needs 3 requests before we judge it
+MIN_EVENTS = 3
 
 RESPONSES = {
     "Critical": "Revoke the session immediately, force password reset, require MFA, notify SOC",
@@ -12,7 +21,6 @@ RESPONSES = {
     "Medium": "Require re-authentication, warn user",
     "Low": "Log and monitor (likely a Wi-Fi to mobile data switch)",
 }
-SCORES = {"Critical": 90, "High": 70, "Medium": 45, "Low": 25}
 
 
 def make_logs():
@@ -61,26 +69,27 @@ def detect_session_anomalies(df):
 
                 if new_ip or new_device or new_country:
                     if new_device and new_country:
-                        level = "Critical"
+                        score = 90
                     elif new_device and new_ip:
-                        level = "High"
+                        score = 70
                     elif new_device or new_country:
-                        level = "Medium"
+                        score = 45
                     else:
-                        level = "Low"
+                        score = 25
 
                     novel = []
                     if new_device:
-                        novel.append(f"device '{device}'")
+                        novel.append(f"new device '{device}'")
                     if new_ip:
-                        novel.append(f"IP {ip}")
+                        novel.append(f"new IP {ip}")
                     if new_country:
-                        novel.append(f"country {country}")
+                        novel.append(f"new country {country}")
 
-                    explanation = (f"{level} Risk: session {session} of {row.username} started "
-                                   f"from IP {first['ip']} on device '{first['device']}' "
-                                   f"({first['country']}), but was later used from "
-                                   f"{', '.join(novel)} (after {count} normal requests).")
+                    scored = score_and_explain(
+                        {"score": score, "indicators": novel},
+                        category="Session Anomaly"
+                    )
+                    level = scored["risk_level"]
 
                     events.append({
                         "source": "credential_attacks",
@@ -90,8 +99,8 @@ def detect_session_anomalies(df):
                         "user": str(row.username),
                         "source_ip": ip,
                         "risk_level": level,
-                        "risk_score": SCORES[level],
-                        "explanation": explanation,
+                        "risk_score": score,
+                        "explanation": scored["explanation"],
                         "evidence": {"session_id": str(session),
                                      "new_ip": bool(new_ip),
                                      "new_device": bool(new_device),
