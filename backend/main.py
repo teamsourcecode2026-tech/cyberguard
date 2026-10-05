@@ -643,3 +643,28 @@ def login(data: LoginRequest):
 def get_me(current_user: dict = Depends(require_auth)):
     """Returns the current authenticated user's info."""
     return {"username": current_user["sub"], "authenticated": True}
+
+class ResetPasswordRequest(BaseModel):
+    username: str
+    old_password: str
+    new_password: str
+
+@app.post("/api/reset-password")
+def reset_password(data: ResetPasswordRequest):
+    user = users.find_one({"username": data.username})
+    if not user:
+        return {"success": False, "message": "User not found"}
+
+    stored_hash = user["password"].encode("utf-8")
+    if not bcrypt.checkpw(data.old_password.encode("utf-8"), stored_hash):
+        return {"success": False, "message": "Current password is incorrect"}
+
+    if len(data.new_password) < 6:
+        return {"success": False, "message": "New password must be at least 6 characters"}
+
+    new_hash = bcrypt.hashpw(data.new_password.encode("utf-8"), bcrypt.gensalt())
+    users.update_one(
+        {"username": data.username},
+        {"$set": {"password": new_hash.decode("utf-8")}}
+    )
+    return {"success": True, "message": "Password updated successfully"}

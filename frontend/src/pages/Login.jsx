@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { loginUser, registerUser } from '../api';
+import { loginUser, registerUser, resetPassword } from '../api';
 
 const TAGLINES = [
   "Protecting you from phishing",
@@ -16,6 +16,7 @@ function Login({ onLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [oldPassword, setOldPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -40,6 +41,7 @@ function Login({ onLogin }) {
     setUsername('');
     setPassword('');
     setConfirmPassword('');
+    setOldPassword('');
     setError('');
     setSuccess('');
     setShowPassword(false);
@@ -123,6 +125,44 @@ function Login({ onLogin }) {
     }
   };
 
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (username.length < 3) {
+      setError('Username must be at least 3 characters.');
+      return;
+    }
+    if (oldPassword.length < 1) {
+      setError('Please enter your current password.');
+      return;
+    }
+    if (password.length < 6) {
+      setError('New password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('New passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await resetPassword(username, oldPassword, password);
+      if (result.success) {
+        setSuccess('Password reset successful! Please sign in with your new password.');
+        setTimeout(() => handleTabSwitch('signin'), 2000);
+      } else {
+        setError(result.message || 'Password reset failed.');
+      }
+    } catch (err) {
+      setError('An error occurred during password reset.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const strength = calculatePasswordStrength(password);
 
   return (
@@ -169,141 +209,116 @@ function Login({ onLogin }) {
             </div>
           )}
 
-          {activeTab === 'signin' ? (
+          {activeTab === 'signin' && (
             <form onSubmit={handleSignIn} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">Username</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">👤</span>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm"
-                    placeholder="Enter your username"
-                  />
+                  <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="Enter your username" />
                 </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">Password</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔒</span>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-10 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm"
-                    placeholder="Enter your password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs"
-                  >
-                    {showPassword ? 'Hide' : 'Show'}
-                  </button>
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="Enter your password" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs">{showPassword ? 'Hide' : 'Show'}</button>
                 </div>
               </div>
-              
               <div className="flex items-center justify-between text-xs">
                 <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-700 bg-gray-950 text-blue-500 focus:ring-blue-500"
-                  />
+                  <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="w-4 h-4 rounded border-gray-700 bg-gray-950 text-blue-500 focus:ring-blue-500" />
                   <span className="text-gray-400">Remember me</span>
                 </label>
-                <button
-                  type="button"
-                  onClick={() => alert("Password reset functionality not implemented.")}
-                  className="text-blue-400 hover:text-blue-300"
-                >
-                  Forgot password?
-                </button>
+                <button type="button" onClick={() => handleTabSwitch('reset')} className="text-blue-400 hover:text-blue-300">Forgot password?</button>
               </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 mt-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-lg font-medium text-sm transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center"
-              >
-                {loading ? (
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                ) : 'Sign In'}
+              <button type="submit" disabled={loading} className="w-full py-2.5 mt-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-lg font-medium text-sm transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center">
+                {loading ? (<svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>) : 'Sign In'}
               </button>
             </form>
-          ) : (
+          )}
+
+          {activeTab === 'signup' && (
             <form onSubmit={handleSignUp} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">Username</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">👤</span>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm"
-                    placeholder="Choose a username"
-                  />
+                  <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="Choose a username" />
                 </div>
               </div>
-              
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">Password</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔒</span>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-10 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm"
-                    placeholder="Create a password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs"
-                  >
-                    {showPassword ? 'Hide' : 'Show'}
-                  </button>
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="Create a password" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs">{showPassword ? 'Hide' : 'Show'}</button>
                 </div>
                 <div className="mt-2 h-1.5 w-full bg-gray-800 rounded-full overflow-hidden flex">
                   <div className={`h-full transition-all duration-300 ${strength.color}`} style={{ width: strength.width }}></div>
                 </div>
               </div>
-
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">Confirm Password</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔒</span>
-                  <input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full pl-10 pr-10 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm"
-                    placeholder="Confirm password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs"
-                  >
-                    {showConfirmPassword ? 'Hide' : 'Show'}
-                  </button>
+                  <input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="Confirm password" />
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs">{showConfirmPassword ? 'Hide' : 'Show'}</button>
                 </div>
               </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 mt-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-lg font-medium text-sm transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center"
-              >
-                {loading ? (
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                ) : 'Sign Up'}
+              <button type="submit" disabled={loading} className="w-full py-2.5 mt-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-lg font-medium text-sm transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center">
+                {loading ? (<svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>) : 'Sign Up'}
               </button>
+            </form>
+          )}
+
+          {activeTab === 'reset' && (
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="text-center mb-2">
+                <span className="text-2xl">🔑</span>
+                <h3 className="text-sm font-semibold text-gray-300 mt-1">Reset Your Password</h3>
+                <p className="text-xs text-gray-500">Enter your username and current password to set a new one</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Username</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">👤</span>
+                  <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="Your username" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Current Password</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔒</span>
+                  <input type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="Enter current password" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">New Password</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔒</span>
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="Enter new password" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs">{showPassword ? 'Hide' : 'Show'}</button>
+                </div>
+                <div className="mt-2 h-1.5 w-full bg-gray-800 rounded-full overflow-hidden flex">
+                  <div className={`h-full transition-all duration-300 ${strength.color}`} style={{ width: strength.width }}></div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Confirm New Password</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔒</span>
+                  <input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-2 bg-gray-950 border border-gray-800 rounded-lg focus:outline-none focus:border-blue-500 text-sm" placeholder="Confirm new password" />
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs">{showConfirmPassword ? 'Hide' : 'Show'}</button>
+                </div>
+              </div>
+              <button type="submit" disabled={loading} className="w-full py-2.5 mt-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-lg font-medium text-sm transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center">
+                {loading ? (<svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>) : 'Reset Password'}
+              </button>
+              <p className="text-center text-xs text-gray-500">
+                <button type="button" onClick={() => handleTabSwitch('signin')} className="text-blue-400 hover:text-blue-300">← Back to Sign In</button>
+              </p>
             </form>
           )}
         </div>

@@ -63,6 +63,19 @@ export async function registerUser(username, password) {
   }
 }
 
+export async function resetPassword(username, old_password, new_password) {
+  try {
+    const res = await fetch(`${AUTH_URL}/api/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, old_password, new_password }),
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, message: "Cannot reach server" };
+  }
+}
+
 // --- Generic Submissions (with auth) ---
 async function submitText(endpoint, text) {
   try {
