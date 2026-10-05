@@ -2,30 +2,27 @@ import json
 from datetime import datetime, timedelta
 
 import pandas as pd
-
-# ---- Settings (change these to tune sensitivity) ----
-MIN_DAYS = 7              # need 7 days of download history before judging a user
-SPIKE_Z = 3               # z-score of 3+ = unusual spike (Medium)
-HIGH_Z = 6                # z-score of 6+ = extreme spike (High)
-MIN_STD = 2               # minimum spread, so constant users don't over-alert
-MIN_ABS = 20              # a spike must be at least 20 files
-PAIR_WINDOW = "30min"     # password + recovery email changed within this time
+import os
+import sys
+sys.path.append(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend")
+)
+from risk_scoring import score_and_explain
+MIN_DAYS = 7
+SPIKE_Z = 3
+HIGH_Z = 6
+MIN_STD = 2
+MIN_ABS = 20
+PAIR_WINDOW = "30min"
 
 RESPONSES = {
     "Critical": "Suspend account, revoke all sessions, restore recovery email, force password reset, notify SOC",
     "High": "Require MFA, verify with the user, review recent changes and downloads, notify SOC",
     "Medium": "Warn user, require re-authentication, monitor activity",
 }
-SCORES = {"Critical": 90, "High": 70, "Medium": 45}
 
 
 def make_logs():
-    """Fake activity: 20 users download 8-12 files a day for 30 days.
-    Then on day 31:
-      user3  : downloads 13 files (a bit more than usual, harmless)
-      user6  : downloads 150 files (spike)
-      user11 : changes password and recovery email 10 minutes apart (lockout pattern)
-      user15 : downloads 150 files AND changes password + recovery email (both)"""
     base = datetime(2026, 9, 1)
     rows = []
     for n in range(1, 21):
@@ -44,8 +41,6 @@ def make_logs():
 
 
 def detect_behaviour_change(df):
-    """Input: DataFrame with columns timestamp, username, action, amount, ip.
-    Output: list of alert dictionaries."""
     df = df.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df["day"] = df["timestamp"].dt.normalize()
@@ -54,13 +49,11 @@ def detect_behaviour_change(df):
     events = []
 
     for user, g in df.groupby("username"):
-        # Files downloaded per day by this user
         downloads = g[g["action"] == "download"].groupby("day")["amount"].sum().sort_index()
         pw_times = g[g["action"] == "password_change"]["timestamp"]
         em_times = g[g["action"] == "recovery_email_change"]["timestamp"]
 
         for day in sorted(g["day"].drop_duplicates()):
-            # Signal 1: download spike compared with this user's own past days
             spike, z, today, mean = False, 0.0, 0.0, 0.0
             if day in downloads.index:
                 past = downloads[downloads.index < day]
@@ -71,7 +64,6 @@ def detect_behaviour_change(df):
                     z = (today - mean) / std
                     spike = z >= SPIKE_Z and today >= MIN_ABS
 
-            # Signal 2: password and recovery email both changed within 30 minutes
             pw_today = pw_times[pw_times.dt.normalize() == day]
             em_today = em_times[em_times.dt.normalize() == day]
             paired = any(abs(a - b) <= window for a in pw_today for b in em_today)
@@ -80,20 +72,24 @@ def detect_behaviour_change(df):
                 continue
 
             if spike and paired:
-                level = "Critical"
+                score = 90
             elif paired:
-                level = "High"
+                score = 70
             else:
-                level = "High" if z >= HIGH_Z else "Medium"
+                score = 70 if z >= HIGH_Z else 45
 
-            parts = []
+            indicators = []
             if spike:
-                parts.append(f"downloaded {int(today)} files on {day:%Y-%m-%d}, but normally "
-                             f"downloads about {mean:.0f} per day (z-score {z:.1f})")
+                indicators.append(f"downloaded {int(today)} files on {day:%Y-%m-%d}, but normally "
+                                  f"downloads about {mean:.0f} per day (z-score {z:.1f})")
             if paired:
-                parts.append(f"changed both the password and the recovery email "
-                             f"within {PAIR_WINDOW}")
-            explanation = f"{level} Risk: {user} " + " and ".join(parts) + "."
+                indicators.append(f"changed both the password and the recovery email within {PAIR_WINDOW}")
+
+            scored = score_and_explain(
+                {"score": score, "indicators": indicators},
+                category="Sudden Behaviour Change"
+            )
+            level = scored["risk_level"]
 
             if spike and paired:
                 mitre = "T1098 - Account Manipulation; T1567 - Exfiltration Over Web Service"
@@ -111,8 +107,8 @@ def detect_behaviour_change(df):
                 "user": str(user),
                 "source_ip": str(day_rows.iloc[-1]["ip"]),
                 "risk_level": level,
-                "risk_score": SCORES[level],
-                "explanation": explanation,
+                "risk_score": scored["score"],
+                "explanation": scored["explanation"],
                 "evidence": {"download_spike": bool(spike),
                              "files_downloaded_today": int(round(today)),
                              "normal_daily_downloads": round(mean, 1),
