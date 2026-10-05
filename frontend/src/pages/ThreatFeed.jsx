@@ -12,6 +12,7 @@ const riskColors = {
 function ThreatFeed({ alerts, onSelect }) {
   const [search, setSearch] = React.useState("");
   const [riskFilter, setRiskFilter] = React.useState("All");
+  const [statusFilter, setStatusFilter] = React.useState("All");
 
   const sorted = [...alerts].sort(
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
@@ -21,16 +22,19 @@ function ThreatFeed({ alerts, onSelect }) {
     const searchText = search.toLowerCase();
 
     const matchesSearch =
-      alert.event_id.toLowerCase().includes(searchText) ||
-      alert.category.toLowerCase().includes(searchText) ||
-      alert.explanation.toLowerCase().includes(searchText) ||
-      alert.overall_risk_level.toLowerCase().includes(searchText);
-
+      (alert.event_id || "").toLowerCase().includes(searchText) ||
+      (alert.category || "").toLowerCase().includes(searchText) ||
+      (alert.explanation || "").toLowerCase().includes(searchText) ||
+      (alert.overall_risk_level || "").toLowerCase().includes(searchText);
     const matchesRisk =
-      riskFilter === "All" ||
-      alert.overall_risk_level === riskFilter;
+  riskFilter === "All" ||
+  alert.overall_risk_level === riskFilter;
 
-    return matchesSearch && matchesRisk;
+const matchesStatus =
+  statusFilter === "All" ||
+  alert.status === statusFilter;
+
+return matchesSearch && matchesRisk && matchesStatus;
   });
 
   return (
@@ -65,6 +69,18 @@ function ThreatFeed({ alerts, onSelect }) {
           <option value="Critical">Critical</option>
         </select>
 
+        {/* Status Filter */}
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="bg-gray-800 text-white border border-gray-700 rounded-xl px-4 py-3 outline-none focus:border-blue-500"
+        >
+          <option value="All">All Statuses</option>
+          <option value="new">New</option>
+          <option value="investigating">Investigating</option>
+          <option value="resolved">Resolved</option>
+        </select>
+
       </div>
 
       {/* Threat List */}
@@ -85,17 +101,36 @@ function ThreatFeed({ alerts, onSelect }) {
               </p>
 
               <p className="text-gray-500 text-xs mt-1">
-                {new Date(alert.created_at).toLocaleString()}
+                alert.created_at
+                  ? new Date(alert.created_at).toLocaleString()
+                  : "Unknown"
               </p>
             </div>
 
-            <span
-              className={`${
-                riskColors[alert.overall_risk_level]
-              } text-white text-xs font-bold px-3 py-1 rounded-full`}
-            >
-              {alert.overall_risk_level}
-            </span>
+            <div className="flex items-center gap-3">
+   
+              <div className="text-right">
+                <p className="text-xs text-gray-400">Status</p>
+                <p
+                  className={`font-semibold ${
+                    alert.status === "resolved"
+                      ? "text-green-400"
+                      : alert.status === "investigating"
+                      ? "text-yellow-400"
+                      : "text-red-400"
+                   }`}
+                 >
+                   {alert.status}
+                 </p>
+               </div>
+
+               <span
+                 className={`${riskColors[alert.overall_risk_level] || "bg-gray-600"} text-white text-xs font-bold px-3 py-1 rounded-full`}
+              >
+                 {alert.overall_risk_level}
+              </span>
+
+            </div>
           </div>
         ))}
 
