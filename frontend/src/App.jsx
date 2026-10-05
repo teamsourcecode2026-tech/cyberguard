@@ -4,6 +4,7 @@ import Overview from "./pages/Overview";
 import ThreatFeed from "./pages/ThreatFeed";
 import AlertDetail from "./pages/AlertDetail";
 import ThreatIntelligence from "./pages/ThreatIntelligence";
+import ScanCenter from "./pages/ScanCenter";
 import { getAlerts } from "./api";
 
 function App() {
@@ -58,6 +59,13 @@ function App() {
               className="text-gray-300 hover:text-white font-medium"
             >
               Overview
+            </button>
+
+            <button
+              onClick={() => setPage("scan")}
+              className="text-gray-300 hover:text-white font-medium"
+            >
+              Scan Center
             </button>
 
             <button
@@ -117,6 +125,10 @@ function App() {
         <>
           {page === "overview" && (
             <Overview alerts={alerts} />
+          )}
+
+          {page === "scan" && (
+            <ScanCenter />
           )}
 
           {page === "feed" && (
