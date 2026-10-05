@@ -192,6 +192,58 @@ def ingest_log(log: LogEntry):
 
     return {"event_id": event_id, **result, **final}
 
+# ---- Helper to extract threat intelligence metadata ----
+
+def _enrich_threat_intel(category: str, raw_payload, result: dict) -> dict:
+    intel = {}
+
+    # 1. Domain extraction
+    if "domain" in result:
+        intel["domain"] = result["domain"]
+    elif isinstance(raw_payload, str):
+        import re
+        domain_match = re.search(r'(?:https?://)?(?:www\.)?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', raw_payload)
+        if domain_match:
+            intel["domain"] = domain_match.group(1).split("/")[0].split(":")[0]
+
+    # 2. Source IP extraction
+    if "source_ip" in result:
+        intel["source_ip"] = result["source_ip"]
+    elif isinstance(raw_payload, str):
+        import re
+        ip_match = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', raw_payload)
+        if ip_match:
+            intel["source_ip"] = ip_match.group(0)
+
+    # 3. Geolocation & Reputation heuristics
+    score = result.get("score", 0)
+    if score >= 75:
+        intel["reputation"] = "Malicious (Known Threat)"
+    elif score >= 50:
+        intel["reputation"] = "Suspicious (High Risk)"
+    elif score >= 25:
+        intel["reputation"] = "Medium Risk (Flagged)"
+    else:
+        intel["reputation"] = "Clean / Verified"
+
+    if intel.get("source_ip"):
+        ip = intel["source_ip"]
+        if ip.startswith("10.") or ip.startswith("192.168.") or ip.startswith("172."):
+            intel["geolocation"] = "Internal Network (RFC 1918)"
+        elif ip.startswith("127."):
+            intel["geolocation"] = "Localhost (Loopback)"
+        else:
+            intel["geolocation"] = "Cloud Infrastructure / External"
+    elif intel.get("domain"):
+        intel["geolocation"] = "Global Anycast / CDN"
+
+    # 4. Email Auth fields
+    for field in ["spf", "dkim", "dmarc"]:
+        if field in result:
+            intel[field] = result[field]
+
+    return intel
+
 # ---- Helper to save result + create alert ----
 
 def _save_and_alert(result: dict, category: str, raw_payload, recommended_action_high: str):
@@ -200,20 +252,23 @@ def _save_and_alert(result: dict, category: str, raw_payload, recommended_action
     event_id = str(event.inserted_id)
 
     final = score_and_explain(result, category)
-
     action = recommended_action_high if final["risk_level"] in ["High", "Critical"] else "Monitor"
-    alerts.insert_one({
+
+    intel = _enrich_threat_intel(category, raw_payload, result)
+    alert_doc = {
         "event_id": event_id,
         "category": category,
-        "score": result["score"],
-        "verdict": result["verdict"],
-        "indicators": result["indicators"],
+        "score": result.get("score", 0),
+        "verdict": result.get("verdict", "Unknown"),
+        "indicators": result.get("indicators", []),
         "overall_risk_level": final["risk_level"],
         "explanation": final["explanation"],
         "recommended_action": action,
         "status": "new",
-        "created_at": str(datetime.now())
-    })
+        "created_at": str(datetime.now()),
+        **intel
+    }
+    alerts.insert_one(alert_doc)
 
     return {"event_id": event_id, **result, **final}
 
@@ -524,6 +579,9 @@ class EmailAuthInput(BaseModel):
 @app.post("/api/ingest/email-auth")
 def ingest_email_auth(body: EmailAuthInput):
     result = analyze_email_auth(body.sender_domain, body.sender_ip, body.dkim_selector)
+    result["domain"] = body.sender_domain
+    if body.sender_ip:
+        result["source_ip"] = body.sender_ip
     return _save_and_alert(result, "email_auth", body.sender_domain, "Block spoofed emails from this domain")
 
 # ---- Query Endpoints ----

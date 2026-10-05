@@ -113,7 +113,7 @@ const colorClasses = {
   },
 };
 
-function Overview({ alerts = [] }) {
+function Overview({ alerts = [], onRefresh }) {
   const total = alerts.length;
 
   const threatsDetected = alerts.filter((alert) =>
@@ -177,6 +177,12 @@ function Overview({ alerts = [] }) {
               CyberGuard Security Operations Dashboard
             </p>
           </div>
+
+          {onRefresh && (
+            <button onClick={onRefresh} className="ml-auto px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 border border-gray-700">
+              🔄 Refresh
+            </button>
+          )}
         </div>
       </div>
 

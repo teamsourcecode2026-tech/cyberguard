@@ -24,7 +24,7 @@ const riskStyles = {
   },
 };
 
-function ThreatFeed({ alerts = [], onSelect }) {
+function ThreatFeed({ alerts = [], onSelect, onRefresh }) {
   const [search, setSearch] = React.useState("");
   const [riskFilter, setRiskFilter] = React.useState("All");
   const [categoryFilter, setCategoryFilter] = React.useState("All");
@@ -138,6 +138,11 @@ function ThreatFeed({ alerts = [], onSelect }) {
             </p>
           </div>
 
+          {onRefresh && (
+            <button onClick={onRefresh} className="ml-auto px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 border border-gray-700">
+              🔄 Refresh
+            </button>
+          )}
         </div>
 
       </div>

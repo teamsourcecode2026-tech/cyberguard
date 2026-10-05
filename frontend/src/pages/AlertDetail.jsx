@@ -28,7 +28,7 @@ const riskStyles = {
   },
 };
 
-function AlertDetail({ alert }) {
+function AlertDetail({ alert, onRefresh }) {
   const data = alert || mockData[0];
 
   const risk =
@@ -52,8 +52,8 @@ function AlertDetail({ alert }) {
       <div className="max-w-6xl mx-auto">
 
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
+        <div className="mb-8 flex items-center justify-between">
+          <div className="flex items-center gap-3">
             <span className="text-3xl">🔎</span>
 
             <div>
@@ -66,6 +66,15 @@ function AlertDetail({ alert }) {
               </p>
             </div>
           </div>
+
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 border border-gray-700"
+            >
+              🔄 Refresh
+            </button>
+          )}
         </div>
 
         {/* Main Alert Header */}

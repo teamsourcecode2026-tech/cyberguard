@@ -16,18 +16,19 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [usingMockData, setUsingMockData] = useState(false);
 
-  useEffect(() => {
-    if (loggedIn) {
-      setLoading(true);
+  const refreshAlerts = () => {
+    setLoading(true);
+    getAlerts().then(({ data, isMock }) => {
+      const sorted = [...data].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setAlerts(sorted);
+      setSelectedAlert(sorted[0] || null);
+      setUsingMockData(isMock);
+      setLoading(false);
+    });
+  };
 
-      getAlerts().then(({ data, isMock }) => {
-        const sorted = [...data].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        setAlerts(sorted);
-        setSelectedAlert(sorted[0] || null);
-        setUsingMockData(isMock);
-        setLoading(false);
-      });
-    }
+  useEffect(() => {
+    if (loggedIn) refreshAlerts();
   }, [loggedIn]);
 
   if (!loggedIn) {
@@ -110,7 +111,7 @@ function App() {
       ) : (
         <>
           {page === "overview" && (
-            <Overview alerts={alerts} />
+            <Overview alerts={alerts} onRefresh={refreshAlerts} />
           )}
 
           {page === "scan" && (
@@ -120,6 +121,7 @@ function App() {
           {page === "feed" && (
             <ThreatFeed
               alerts={alerts}
+              onRefresh={refreshAlerts}
               onSelect={(a) => {
                 setSelectedAlert(a);
                 setPage("detail");
@@ -127,12 +129,12 @@ function App() {
             />
           )}
 
-          {page === "detail" && selectedAlert && (
-            <AlertDetail alert={selectedAlert} />
+          {page === "detail" && (
+            <AlertDetail alert={selectedAlert || alerts[0]} onRefresh={refreshAlerts} />
           )}
 
           {page === "intelligence" && (
-            <ThreatIntelligence alert={selectedAlert} />
+            <ThreatIntelligence alert={selectedAlert || alerts[0]} onRefresh={refreshAlerts} />
           )}
         </>
       )}
