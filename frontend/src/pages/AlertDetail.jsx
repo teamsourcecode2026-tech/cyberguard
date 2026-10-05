@@ -102,34 +102,52 @@ function AlertDetail({ alert }) {
             Investigation Summary
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-gray-900 rounded-xl p-5">
-              <p className="text-gray-400 text-sm mb-2">
-                Threat Type
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+           <div className="bg-gray-900 rounded-xl p-5">
+             <p className="text-gray-400 text-sm mb-2">
+               Threat Type
               </p>
               <p className="text-white font-semibold capitalize">
-                {data.category}
-              </p>
-            </div>
+                 {data.category}
+               </p>
+             </div>
 
-            <div className="bg-gray-900 rounded-xl p-5">
-              <p className="text-gray-400 text-sm mb-2">
-                Risk Level
-              </p>
-              <p className="text-white font-semibold">
-                {data.overall_risk_level}
-              </p>
-            </div>
+             <div className="bg-gray-900 rounded-xl p-5">
+               <p className="text-gray-400 text-sm mb-2">
+                  Risk Level
+                </p>
+                <p className="text-white font-semibold">
+                   {data.overall_risk_level}
+                 </p>
+               </div>
 
-            <div className="bg-gray-900 rounded-xl p-5">
-              <p className="text-gray-400 text-sm mb-2">
-                Detection Status
-              </p>
-              <p className="text-green-400 font-semibold">
-                Detected
-              </p>
+               <div className="bg-gray-900 rounded-xl p-5">
+                 <p className="text-gray-400 text-sm mb-2">
+                   Verdict
+                 </p>
+                 <p className="text-white font-semibold">
+                   {data.verdict || "N/A"}
+                 </p>
+               </div>
+
+               <div className="bg-gray-900 rounded-xl p-5">
+                 <p className="text-gray-400 text-sm mb-2">
+                   Score
+                 </p>
+                 <p className="text-white font-semibold">
+                   {data.score ?? "N/A"}
+                 </p>
+               </div>
+
+               <div className="bg-gray-900 rounded-xl p-5">
+                 <p className="text-gray-400 text-sm mb-2">
+                   Detection Status
+                 </p>
+                 <p className="text-green-400 font-semibold">
+                   Detected
+                </p>
+              </div>
             </div>
-          </div>
 
           <div className="bg-gray-900 rounded-xl p-5 mt-4">
             <p className="text-gray-400 text-sm mb-2">

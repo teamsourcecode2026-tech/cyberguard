@@ -1,7 +1,14 @@
 import os
+import sys
 import joblib
 import numpy as np
 import pandas as pd
+
+# Tell Python where to find risk_scoring.py (in the sibling "backend" folder)
+sys.path.append(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend")
+)
+from risk_scoring import get_risk_level
 
 
 MODEL_PATH = os.path.join(
@@ -49,10 +56,13 @@ class CyberGuardAnomalyDetector:
 
         self.mean = features.mean()
         self.std = features.std().replace(0, 1)
-        
+
         # Fixed reference for scaling risk scores
         z = (features - self.mean) / self.std
-        self.max_score = np.sqrt((z ** 2).sum(axis=1)).max()
+
+        self.max_score = np.sqrt(
+            (z ** 2).sum(axis=1)
+        ).max()
 
         return self
 
@@ -75,7 +85,9 @@ class CyberGuardAnomalyDetector:
         max_score = self.max_score
 
         if max_score == 0:
-            risk_scores = np.zeros(len(anomaly_score))
+            risk_scores = np.zeros(
+                len(anomaly_score)
+            )
         else:
             risk_scores = (
                 anomaly_score / max_score
@@ -88,48 +100,39 @@ class CyberGuardAnomalyDetector:
 
         result["risk_score"] = risk_scores
 
+        result["risk_level"] = result[
+            "risk_score"
+        ].apply(get_risk_level)
+
         result["anomaly"] = np.where(
-            result["risk_score"] >= 60,
+            result["risk_level"].isin(
+                ["High", "Critical"]
+            ),
             "Anomaly",
             "Normal"
         )
 
-        result["risk_level"] = result[
-            "risk_score"
-        ].apply(self._risk_level)
-
         result["recommended_action"] = result[
             "risk_level"
-        ].apply(self._recommended_action)
+        ].apply(
+            self._recommended_action
+        )
 
         return result
 
     @staticmethod
-    def _risk_level(score):
-
-        if score < 30:
-            return "Low"
-
-        elif score < 60:
-            return "Medium"
-
-        elif score < 80:
-            return "High"
-
-        else:
-            return "Critical"
-
-    @staticmethod
     def _recommended_action(level):
 
-        actions = {
-            "Low": "Allow",
-            "Medium": "Monitor",
-            "High": "Alert",
-            "Critical": "Investigate immediately"
-        }
+         actions = {
+                "Safe": "Allow",
+                "Low": "Allow",
+                "Medium": "Monitor",
+                "High": "Alert",
+                "Critical": "Investigate immediately"
+                }
+        
 
-        return actions[level]
+         return actions[level]
 
     def save_model(self):
 
@@ -158,6 +161,7 @@ class CyberGuardAnomalyDetector:
         saved = joblib.load(MODEL_PATH)
 
         detector = cls()
+
         detector.features = saved["features"]
         detector.mean = saved["mean"]
         detector.std = saved["std"]
@@ -229,8 +233,8 @@ def main():
     print("SUMMARY")
     print("=" * 60)
 
-    print(f"Total events      : {total}")
-    print(f"Anomalies detected: {anomalies}")
+    print(f"Total events       : {total}")
+    print(f"Anomalies detected : {anomalies}")
 
     print("\nRisk distribution:")
 

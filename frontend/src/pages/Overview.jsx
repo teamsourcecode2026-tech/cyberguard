@@ -6,6 +6,8 @@ const GROUPS = [
     categories: [
       "phishing", "sms_phishing", "url_phishing",
       "social_phishing", "qr_phishing", "website_phishing",
+      "lookalike_domain", "ssl_domain", "url_manipulation",
+      "malicious_redirect", "fake_login",
     ],
   },
   {
@@ -24,10 +26,7 @@ const GROUPS = [
     label: "Malicious URL & Website",
     color: "orange",
     icon: "🔗",
-    categories: [
-      "domain_spoofing", "lookalike_domain", "ssl_domain",
-      "url_manipulation", "malicious_redirect", "fake_login",
-    ],
+    categories: ["domain_spoofing"],
   },
   {
     label: "Account Takeover & Anomaly",
@@ -199,34 +198,48 @@ function Overview({ alerts }) {
       <div className="mt-8">
         <h2 className="text-white text-xl font-semibold mb-4">Recent Security Alerts</h2>
         <div className="bg-gray-800 rounded-2xl p-6 shadow-lg border border-gray-700">
-          <div className="grid grid-cols-4 gap-4 text-gray-400 text-sm font-semibold border-b border-gray-700 pb-3">
+
+          <div className="grid grid-cols-6 gap-4 text-gray-400 text-sm font-semibold border-b border-gray-700 pb-3">
             <span>Event ID</span>
             <span>Category</span>
             <span>Risk</span>
-            <span>Recommended Action</span>
+            <span>Verdict</span>
+            <span>Score</span>
+            <span>Action</span>
           </div>
 
-          {alerts.slice(0, 5).map((alert, index) => (
-            <div
-              key={alert.event_id || index}
-              className="grid grid-cols-4 gap-4 text-gray-300 text-sm py-4 border-b border-gray-700 last:border-b-0"
-            >
-              <span className="text-blue-400 font-medium">{alert.event_id}</span>
-              <span className="capitalize">{alert.category}</span>
-              <span
-                className={
-                  alert.overall_risk_level === "Critical" ? "text-red-400 font-semibold"
-                  : alert.overall_risk_level === "High" ? "text-orange-400 font-semibold"
-                  : alert.overall_risk_level === "Medium" ? "text-yellow-400 font-semibold"
-                  : alert.overall_risk_level === "Low" ? "text-green-400"
-                  : "text-gray-400"
-                }
+          {[...alerts]
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+            .slice(0, 5)
+            .map((alert, index) => (
+              <div
+                key={alert.event_id || index}
+                className="grid grid-cols-6 gap-4 text-gray-300 text-sm py-4 border-b border-gray-700 last:border-b-0"
               >
-                {alert.overall_risk_level}
-              </span>
-              <span className="text-gray-300">{alert.recommended_action}</span>
-            </div>
-          ))}
+                <span className="text-blue-400 font-medium">{alert.event_id}</span>
+                <span className="capitalize">{alert.category}</span>
+                <span
+                  className={
+                    alert.overall_risk_level === "Critical" ? "text-red-400 font-semibold"
+                    : alert.overall_risk_level === "High" ? "text-orange-400 font-semibold"
+                    : alert.overall_risk_level === "Medium" ? "text-yellow-400 font-semibold"
+                    : alert.overall_risk_level === "Low" ? "text-green-400"
+                    : "text-gray-400"
+                  }
+                >
+                  {alert.overall_risk_level}
+                </span>
+                <span className="text-cyan-400 font-medium">
+                  {alert.verdict || "-"}
+                </span>
+                <span className="text-white font-semibold">
+                  {alert.score ?? "-"}
+                </span>
+                <span className="text-gray-300">
+                  {alert.recommended_action}
+                </span>
+              </div>
+            ))}
 
           {alerts.length === 0 && (
             <p className="text-gray-500 text-sm py-4">No security alerts available.</p>

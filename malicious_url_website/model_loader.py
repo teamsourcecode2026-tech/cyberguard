@@ -1,7 +1,9 @@
+import os
 import joblib
 
-model = joblib.load("phishing_model.pkl")
-vectorizer = joblib.load("vectorizer.pkl")
+_dir = os.path.dirname(__file__)
+model = joblib.load(os.path.join(_dir, "phishing_model.pkl"))
+vectorizer = joblib.load(os.path.join(_dir, "vectorizer.pkl"))
 
 
 def score_text(text: str) -> float:
